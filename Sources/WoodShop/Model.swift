@@ -424,8 +424,10 @@ final class Document: ObservableObject {
     @Published var hardwareTemplates: [HardwareTemplate] = []
     let hardwareTemplateStore: HardwareTemplateStore
     @Published var focusPartSearch = UUID()
-    @Published var parts: [Part] = []
-    @Published var parameterPreview: Project?
+    @Published var parts: [Part] = [] { didSet { partsRevision &+= 1 } }
+    private(set) var partsRevision: UInt64 = 0
+    @Published var parameterPreview: Project? { didSet { previewRevision &+= 1 } }
+    private(set) var previewRevision: UInt64 = 0
     @Published var previewAffected: Set<UUID> = []
     @Published var previewConflicts: Set<UUID> = []
     @Published var selectedFeature: FeatureRef?

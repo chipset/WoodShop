@@ -8,12 +8,19 @@ struct InferencePoint {
 enum Inference {
     static func candidates(parts: [Part], guides: [ConstructionGuide], polygons: ((Part) -> [Geo.Poly])? = nil) -> [InferencePoint] {
         var points: [InferencePoint] = []
+        points.reserveCapacity(parts.count * 16 + guides.count)
         for part in parts {
             let polygons = polygons?(part) ?? Geo.polys(for:part)
             var seen: Set<SIMD3<Double>> = []
+            seen.reserveCapacity(16)
+            let rotated = part.isRotated
+            let rotation = rotated ? part.rotMatrix : matrix_identity_double3x3
+            let offset = rotated ? part.center - rotation * (part.size / 2) : part.origin
             for polygon in polygons {
                 for i in polygon.pts.indices {
-                    let a = part.toWorld(polygon.pts[i]), b = part.toWorld(polygon.pts[(i + 1) % polygon.pts.count])
+                    let aLocal = polygon.pts[i], bLocal = polygon.pts[(i + 1) % polygon.pts.count]
+                    let a = rotated ? offset + rotation * aLocal : offset + aLocal
+                    let b = rotated ? offset + rotation * bLocal : offset + bLocal
                     for (p, label) in [(a, "Endpoint"), ((a + b) / 2, "Midpoint")] {
                         let key = SIMD3((p.x * 1e6).rounded(), (p.y * 1e6).rounded(), (p.z * 1e6).rounded())
                         if seen.insert(key).inserted { points.append(InferencePoint(point: p, label: label)) }
@@ -35,7 +42,25 @@ enum Inference {
         return points
     }
     static func nearest(_ screen: SIMD2<Double>, candidates: [InferencePoint], project: (SIMD3<Double>) -> SIMD2<Double>, tolerance: Double = 9) -> InferencePoint? {
-        candidates.map { (simd_length(project($0.point) - screen), $0) }.filter { $0.0 <= tolerance }.min { $0.0 < $1.0 }?.1
+        var best = tolerance * tolerance
+        var found: InferencePoint?
+        for candidate in candidates {
+            let delta = project(candidate.point) - screen
+            let distance = simd_length_squared(delta)
+            if distance < best || (found == nil && distance == best) { best = distance; found = candidate }
+        }
+        return found
+    }
+    static func nearest(_ screen: SIMD2<Double>, candidates: [InferencePoint], projected: [SIMD2<Double>], tolerance: Double = 9) -> InferencePoint? {
+        guard candidates.count == projected.count else { return nil }
+        var best = tolerance * tolerance
+        var found: Int?
+        for i in candidates.indices {
+            let delta = projected[i] - screen
+            let distance = simd_length_squared(delta)
+            if distance < best || (found == nil && distance == best) { best = distance; found = i }
+        }
+        return found.map { candidates[$0] }
     }
 }
 extension Geo {

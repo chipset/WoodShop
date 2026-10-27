@@ -26,9 +26,15 @@ final class ModelView: SCNView {
     private var pushFace: FaceRef?
     private var rectPlane: (axis: Int, value: Double, positive: Bool)?
     private var rectStart = SIMD3<Double>.zero
-    private var inferenceParts: [Part] = []
+    private var inferencePartsRevision: UInt64 = .max
     private var inferenceGuides: [ConstructionGuide] = []
+    private var inferenceExcept: Set<UUID> = []
+    private var inferenceSelectedIDs: Set<UUID> = []
+    private var inferenceIsolated = false
     private var inferenceCache: [InferencePoint] = []
+    private var inferenceScreenCache: [SIMD2<Double>] = []
+    private var inferenceCameraRevision = -1
+    private var inferenceViewSize = CGSize.zero
     private var tapeStart: SIMD3<Double>?
     private var secondaryStart = CGPoint.zero
     private var secondaryDidDrag = false
@@ -211,14 +217,27 @@ final class ModelView: SCNView {
     }
 
     private func infer(_ screen: CGPoint, except: Set<UUID> = []) -> InferencePoint? {
-        let parts = doc.parts.filter { !except.contains($0.id) && doc.isVisible($0) }
-        if parts != inferenceParts || inferenceGuides != doc.studio.guides {
-            inferenceParts = parts; inferenceGuides = doc.studio.guides
+        let selected = doc.isolateSelection ? doc.selectedIDs : []
+        if inferencePartsRevision != doc.partsRevision || inferenceGuides != doc.studio.guides ||
+            inferenceExcept != except || inferenceIsolated != doc.isolateSelection || inferenceSelectedIDs != selected {
+            let parts = doc.parts.filter { !except.contains($0.id) && doc.isVisible($0) }
+            inferencePartsRevision = doc.partsRevision
+            inferenceGuides = doc.studio.guides
+            inferenceExcept = except
+            inferenceIsolated = doc.isolateSelection
+            inferenceSelectedIDs = selected
             inferenceCache = Inference.candidates(parts:parts,guides:inferenceGuides,polygons:{ self.ctrl.polygons(for:$0.id) })
+            inferenceCameraRevision = -1
         }
-        return Inference.nearest(SIMD2(screen.x, screen.y), candidates: inferenceCache, project: { point in
-            let p = self.projectPoint(vec(point)); return SIMD2(Double(p.x), Double(p.y))
-        })
+        if inferenceCameraRevision != ctrl.cameraRevision || inferenceViewSize != bounds.size {
+            inferenceCameraRevision = ctrl.cameraRevision
+            inferenceViewSize = bounds.size
+            inferenceScreenCache = inferenceCache.map { candidate in
+                let p = projectPoint(vec(candidate.point))
+                return SIMD2(Double(p.x), Double(p.y))
+            }
+        }
+        return Inference.nearest(SIMD2(screen.x, screen.y), candidates: inferenceCache, projected: inferenceScreenCache)
     }
 
     // MARK: Mouse
@@ -355,10 +374,18 @@ final class ModelView: SCNView {
 
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        let hovered = pick(p)
+        if doc.tool == .select {
+            if !doc.activeDrag { ctrl.showSnap(nil) }
+            ctrl.setHover(nil)
+            return
+        }
         if doc.tool != .select,let inferred = infer(p, except: mode == .move ? doc.selectedIDs : []) { ctrl.showSnap(inferred.point) }
         else if !doc.activeDrag { ctrl.showSnap(nil) }
-        ctrl.setHover(doc.tool == .select || doc.tool == .tape || hovered?.planar != true ? nil : hovered?.face)
+        if doc.tool == .tape { ctrl.setHover(nil) }
+        else {
+            let hovered = pick(p)
+            ctrl.setHover(hovered?.planar == true ? hovered?.face : nil)
+        }
     }
 
     // MARK: Tool drags

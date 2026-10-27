@@ -137,6 +137,7 @@ final class EaseWorkflowTests: XCTestCase {
         let d = Document(startRecoveryTimer:false,workspaceStore:store);let before = d.project
         d.showInspector = false;d.showPartsSidebar = false;d.showEditableDimensions = false;d.partSearch = "shelf";d.partFilter = "Parts";d.persistWorkspace()
         let controller = SceneController(doc:d);controller.target = SIMD3(22,33,44);controller.distance = 140;controller.ortho = true;controller.updateCamera()
+        RunLoop.main.run(until:Date().addingTimeInterval(0.4))
         XCTAssertEqual(d.project,before)
         let next = Document(startRecoveryTimer:false,workspaceStore:store)
         XCTAssertFalse(next.showInspector);XCTAssertFalse(next.showPartsSidebar);XCTAssertFalse(next.showEditableDimensions);XCTAssertEqual(next.partSearch,"shelf")

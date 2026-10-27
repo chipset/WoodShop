@@ -1,6 +1,32 @@
 import SwiftUI
 import AppKit
 
+/// Keep the browser's sorting and assembly tree stable while selection and status change.
+private final class PartBrowserIndex {
+    private var revision: UInt64 = .max
+    private var search = ""
+    private var filter = ""
+    private var parts: [Part] = []
+    private var tree: [PartTreeNode] = []
+
+    func filtered(_ doc: Document) -> [Part] {
+        if revision != doc.partsRevision || search != doc.partSearch || filter != doc.partFilter {
+            revision = doc.partsRevision; search = doc.partSearch; filter = doc.partFilter
+            parts = doc.parts.filter { part in
+                (filter == "All" || (filter == "Hardware" ? part.hardware == true : part.hardware != true)) &&
+                PartSearch.matches(search,part:part)
+            }
+            tree = PartTreeNode.make(parts)
+        }
+        return parts
+    }
+
+    func assemblyTree(_ doc: Document) -> [PartTreeNode] {
+        _ = filtered(doc)
+        return tree
+    }
+}
+
 struct PartsSidebar: View {
     @ObservedObject var doc: Document
     var ctrl: SceneController? = nil
@@ -9,11 +35,9 @@ struct PartsSidebar: View {
     @State private var expanded: Set<String> = []
     @FocusState private var searchFocused: Bool
     @State private var searchCandidate: UUID?
+    @State private var index = PartBrowserIndex()
     private var filtered: [Part] {
-        doc.parts.filter { part in
-            (filter == "All" || (filter == "Hardware" ? part.hardware == true : part.hardware != true)) &&
-            PartSearch.matches(search,part:part)
-        }
+        index.filtered(doc)
     }
     var body: some View {
         VStack(spacing:0) {
@@ -36,7 +60,7 @@ struct PartsSidebar: View {
                 ScrollView {
                     LazyVStack(alignment:.leading,spacing:3) {
                         if search.isEmpty {
-                            ForEach(PartTreeNode.make(filtered)) { node in
+                            ForEach(index.assemblyTree(doc)) { node in
                                 AssemblyTreeRow(doc:doc,ctrl:ctrl,node:node,expanded:$expanded)
                             }
                         } else { ForEach(filtered) { partRow($0) } }
