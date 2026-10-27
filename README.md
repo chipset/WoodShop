@@ -85,4 +85,4 @@ A few pointers for contributors:
 
 ## License
 
-No license has been chosen yet, so all rights are reserved by default. Open an issue if you want to use or contribute to the code.
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Thomas McQuitty.
