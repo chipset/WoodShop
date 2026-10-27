@@ -1,0 +1,17 @@
+WoodShop 0.14 - UI Updates checkpoint
+
+This branch records the current working application source and tests. The parent
+commit contains the implementation; this checkpoint records the verified state.
+
+The Make workspace unifies CNC preparation, sheet layout, machining review,
+VCarve export, materials, hardware, assembly, and project documents. All twelve
+former Fabrication and Shop destinations remain reachable. The inspector now
+offers selection-based actions, and VCarve instructions use expandable details.
+
+Verification on 2026-10-27: 176 automated tests passed, including the 500-part
+Wittworks project and route parity checks. WoodShop.app 0.14 built and passed
+macOS code-signature and Info.plist checks.
+
+The generated VCarve validation package and usability session form are local
+artifacts. Hands-on VCarve import and observed user testing remain pending.
+Purchased-plan-derived Models and built app bundles are excluded by .gitignore.
