@@ -1,5 +1,7 @@
 # WoodShop
 
+[![CI](https://github.com/chipset/WoodShop/actions/workflows/ci.yml/badge.svg)](https://github.com/chipset/WoodShop/actions/workflows/ci.yml)
+
 A native Mac app for designing furniture and cabinets from real boards, then turning the design into the things you need to build it: a cut list, shop drawings, a lumber buy list, and flat DXF files for a CNC router (VCarve).
 
 Think of it as a woodworking-focused alternative to general 3D modelers such as SketchUp. Every object is a *board* with a species, a grain direction and a thickness, and joinery is real geometry that stays attached to the board when you resize or move it.
@@ -66,6 +68,17 @@ Run the tests:
 ```sh
 swift test            # or ./test_app.sh
 ```
+
+## Releasing
+
+GitHub Actions builds and tests every push (`.github/workflows/ci.yml`). To publish a release, push a version tag:
+
+```sh
+git tag -a v0.16.0 -m "WoodShop 0.16.0"
+git push origin v0.16.0
+```
+
+The Release workflow runs the tests, builds the app with that version number, and attaches `WoodShop-0.16.0-macOS.zip` to a new GitHub release. Running the workflow by hand from the Actions tab does a dry run that only uploads the zip as a downloadable artifact.
 
 ## Project layout
 
