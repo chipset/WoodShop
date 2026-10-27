@@ -99,6 +99,11 @@ struct EdgeProfile: Codable, Identifiable, Equatable {
     var pos2: Bool
     /// Chamfer leg, roundover radius, or arch rise.
     var size: Double
+    /// Optional run along the edge, measured from the board's minimum end. nil = to the end of the board.
+    var from: Double? = nil
+    var to: Double? = nil
+    /// A chamfer or roundover that stops short of one or both ends of the edge.
+    var isPartial: Bool { kind != .arch && (from != nil || to != nil) }
 }
 
 /// A rectangular void removed from a part. Coordinates are relative to the part's min corner.
@@ -264,7 +269,7 @@ extension Part {
     /// Clip planes from chamfers, roundovers and arches.
     var edgePlanes: [(p: SIMD3<Double>, n: SIMD3<Double>)] {
         var out: [(p: SIMD3<Double>, n: SIMD3<Double>)] = []
-        for e in edges ?? [] {
+        for e in edges ?? [] where !e.isPartial {
             func unit(_ axis: Int, _ pos: Bool) -> SIMD3<Double> { var v = SIMD3<Double>.zero; v[axis] = pos ? 1 : -1; return v }
             switch e.kind {
             case .chamfer, .roundover:
@@ -418,6 +423,11 @@ extension Part {
         q.edges = edges?.map { e in
             var n = e
             n.axis1 = remap(e.axis1); n.axis2 = remap(e.axis2)
+            if e.isPartial, e.kind != .arch, 3 - e.axis1 - e.axis2 == b {
+                // The run axis flips direction when it is the one that turns over.
+                let f = e.from ?? 0, t = e.to ?? sb
+                n.from = sb - t; n.to = sb - f
+            }
             if e.axis1 == b { n.pos1.toggle() }
             if e.axis2 == b, e.kind != .arch { n.pos2.toggle() }
             return n
@@ -796,7 +806,7 @@ final class Document: ObservableObject {
         var p = Part(name: nextName(stock.name), origin: SIMD3(0, 0, z),
                      size: SIMD3(stock.hardware != nil ? stock.length : stockLength, stock.thickness, stock.width), species: sp)
         p.thicknessAxis = 1; p.grainDirection = 0
-        if stock.hardware != nil { p.hardware = true }
+        if stock.hardware != nil { p.hardware = true; p.mesh = HardwareShapes.mesh(stock: stock.name, size: p.size) }
         add(p)
     }
     func deleteSelected() {

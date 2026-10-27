@@ -27,10 +27,11 @@ Requirements: a Mac with Apple Silicon and macOS 14 or newer.
 **Joinery**
 - Dado, rabbet, groove, mortise and tenon, miters and bevels
 - Pocket holes, finger joints and dovetails, shelf-pin and hinge-cup drilling patterns
-- Chamfers, roundovers, arches and curved boards, and sketched pockets or cut-outs on any face
+- Chamfers and roundovers (full length or stopped), arches and curved boards, and sketched pockets or cut-outs on any face
 - Shelf-in-dado joints that follow the shelf
 
 **Make**
+- Hardware (hinges, slides, pulls, knobs, braces, screws, shelf pins) shown as recognizable shapes and counted in the buy list
 - Cut list and a buy list: rough board feet with planing allowance, a cut plan that allows for saw kerf, sheet counts and hardware counts
 - Sheet nesting, with optional two-sided work and registration pins
 - Machining review and assembly checks before you cut
@@ -41,7 +42,7 @@ Requirements: a Mac with Apple Silicon and macOS 14 or newer.
 
 | | Import | Export |
 |---|---|---|
-| 3D models | STL, OBJ, PLY, 3DS, DXF 3D faces, Collada DAE, KMZ, USD / USDZ | STL, OBJ, PLY, 3DS, DXF 3D faces, Collada DAE, USDZ |
+| 3D models | STL, OBJ, PLY, 3DS, DXF 3D faces, Collada DAE, KMZ, USD / USDZ (rectangular solids become real boards) | STL, OBJ, PLY, 3DS, DXF 3D faces, Collada DAE, USDZ |
 | Flat outlines | SVG, DXF | SVG, DXF |
 
 SketchUp `.skp` and AutoCAD `.dwg` are proprietary and not supported; use DAE or STL from SketchUp, and DXF for CAD.

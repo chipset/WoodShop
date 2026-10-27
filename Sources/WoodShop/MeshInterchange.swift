@@ -477,8 +477,10 @@ enum MeshIO {
     // MARK: Turning faces into parts
 
     /// Weld vertices, separate every closed shell into its own part, and orient faces outward.
-    static func parts(from contents: MeshFileContents, scale: Double, zUp: Bool, baseName: String) -> (parts: [Part], notes: [String]) {
+    static func parts(from contents: MeshFileContents, scale: Double, zUp: Bool, baseName: String,
+                      boardsFromBlocks: Bool = true, defaultSpecies: Species = .oak) -> (parts: [Part], notes: [String]) {
         var notes = contents.notes
+        var blocks = 0
         var parts: [Part] = []
         var skippedOpen = 0, skippedSmall = 0, skippedBig = 0
         func convert(_ p: SIMD3<Double>) -> SIMD3<Double> {
@@ -562,18 +564,52 @@ enum MeshIO {
                     return SolidCSG.face(p, normal: cross(p[1] - p[0], p[2] - p[0]))
                 }
                 let label = group.name.isEmpty ? baseName : group.name
+                let partName = shellOrder.count > 1 ? "\(label) \(n + 1)" : label
+                if boardsFromBlocks, let board = block(polys, volume: abs(volume), name: partName, defaultSpecies: defaultSpecies) {
+                    blocks += 1
+                    parts.append(board)
+                    continue
+                }
                 do {
-                    var part = try MeshTools.part(polygons: polys, name: shellOrder.count > 1 ? "\(label) \(n + 1)" : label)
+                    var part = try MeshTools.part(polygons: polys, name: partName)
                     if let error = ModelValidation.part(part) { throw ModelValidation.Failure(message: error) }
                     part.name = part.name.trimmingCharacters(in: .whitespaces)
                     parts.append(part)
                 } catch { skippedSmall += 1 }
             }
         }
+        if blocks > 0 { notes.append("Made \(blocks) rectangular solid(s) into boards with grain along the length.") }
         if skippedOpen > 0 { notes.append("Skipped \(skippedOpen) open or non-manifold surface(s); only closed solids can become boards.") }
         if skippedSmall > 0 { notes.append("Skipped \(skippedSmall) shape(s) thinner than 1/32 in.") }
         if skippedBig > 0 { notes.append("Skipped \(skippedBig) shape(s) with more than \(faceLimit) triangles; simplify them first.") }
         return (parts, notes)
+    }
+
+    /// A solid that fills its bounding box is a plain board: give it a thickness, a grain direction and a species.
+    static func block(_ polys: [Geo.Poly], volume: Double, name: String, defaultSpecies: Species) -> Part? {
+        let points = polys.flatMap(\.pts)
+        guard let first = points.first else { return nil }
+        let lo = points.reduce(first, pointwiseMin), hi = points.reduce(first, pointwiseMax)
+        let size = hi - lo
+        guard (0..<3).allSatisfy({ size[$0] >= 1.0 / 32 }) else { return nil }
+        let box = size.x * size.y * size.z
+        guard box > 0, volume >= box * 0.9995 else { return nil }
+        func r(_ x: Double) -> Double { (x * 10_000).rounded() / 10_000 }
+        let sz = SIMD3(r(size.x), r(size.y), r(size.z))
+        var board = Part(name: name, origin: SIMD3(r(lo.x), r(lo.y), r(lo.z)), size: sz, species: species(named: name) ?? defaultSpecies)
+        let t = (0..<3).min { sz[$0] < sz[$1] }!
+        let rest = (0..<3).filter { $0 != t }
+        board.thicknessAxis = t
+        board.grainDirection = rest.max { sz[$0] < sz[$1] }!
+        return ModelValidation.part(board) == nil ? board : nil
+    }
+
+    /// Species hinted by a part name such as "Walnut shelf" or "Maple leg".
+    static func species(named name: String) -> Species? {
+        let n = name.lowercased()
+        let table: [(String, Species)] = [("walnut", .walnut), ("cherry", .cherry), ("maple", .maple), ("poplar", .poplar), ("oak", .oak),
+                                          ("plywood", .plywood), ("mdf", .mdf), ("pine", .pine), ("fir", .pine), ("spruce", .pine)]
+        return table.first { n.contains($0.0) }?.1
     }
 
     /// Split triangle edges that pass through other vertices, so meshes with T-junctions become watertight.
@@ -789,19 +825,26 @@ extension Document {
             let contents = try MeshIO.read(url)
             var scale = contents.inchesPerUnit ?? 1
             var zUp = contents.zUp ?? true
+            var asBoards = true
             if contents.inchesPerUnit == nil || contents.zUp == nil {
                 let alert = NSAlert(); alert.messageText = "Import \(url.lastPathComponent)"
                 alert.informativeText = "Choose the file's length unit and up axis. Files from SketchUp, CAD and 3D printing tools are usually Z up."
                 alert.addButton(withTitle: "Millimeters"); alert.addButton(withTitle: "Inches"); alert.addButton(withTitle: "Cancel")
                 let box = NSButton(checkboxWithTitle: "Z axis points up", target: nil, action: nil)
-                box.state = zUp ? .on : .off; box.sizeToFit()
-                alert.accessoryView = box
+                box.state = zUp ? .on : .off
+                let blocks = NSButton(checkboxWithTitle: "Turn rectangular solids into boards (grain along the length)", target: nil, action: nil)
+                blocks.state = .on
+                let stack = NSStackView(views: [box, blocks]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 6
+                stack.frame = NSRect(x: 0, y: 0, width: 380, height: 44)
+                alert.accessoryView = stack
                 let answer = alert.runModal()
                 if answer == .alertThirdButtonReturn { return true }
                 if contents.inchesPerUnit == nil { scale = answer == .alertFirstButtonReturn ? 1 / 25.4 : 1 }
                 if contents.zUp == nil { zUp = box.state == .on }
+                asBoards = blocks.state == .on
             }
-            let result = MeshIO.parts(from: contents, scale: scale, zUp: zUp, baseName: url.deletingPathExtension().lastPathComponent)
+            let result = MeshIO.parts(from: contents, scale: scale, zUp: zUp, baseName: url.deletingPathExtension().lastPathComponent,
+                                      boardsFromBlocks: asBoards, defaultSpecies: species.isHardware ? .oak : species)
             guard !result.parts.isEmpty else {
                 status = "Nothing imported. " + result.notes.joined(separator: " ")
                 return true

@@ -32,7 +32,7 @@ enum CutList {
             let trims = p.trims.map { t in
                 "\(t.axis)|\(t.positive)|\(t.run)|\(t.angle)|\(t.farEdge)"
             }.sorted().joined(separator: ";")
-            let edgeKey = (p.edges ?? []).map { "\($0.kind.rawValue)|\($0.axis1)|\($0.pos1)|\($0.axis2)|\($0.pos2)|\($0.size)" }.sorted().joined(separator: ";")
+            let edgeKey = (p.edges ?? []).map { "\($0.kind.rawValue)|\($0.axis1)|\($0.pos1)|\($0.axis2)|\($0.pos2)|\($0.size)|\(String(describing: $0.from))|\(String(describing: $0.to))" }.sorted().joined(separator: ";")
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
             let profile = p.profile.flatMap { try? encoder.encode($0) }.map { String(decoding: $0, as: UTF8.self) } ?? ""
             let operations = p.machiningOperations.filter { $0.suppressed != true }.map { op -> String in var n = op; n.suppressed = nil; n.patternID = nil; n.name = ""; n.id = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!; return (try? encoder.encode(n)).map { String(decoding: $0, as: UTF8.self) } ?? "" }.joined(separator: ";")

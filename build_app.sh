@@ -12,6 +12,9 @@ if [[ "$DEVELOPER_DIR" == /Library/Developer/CommandLineTools && -d /Library/Dev
   sdk_options=(--sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk)
 fi
 swift build -c release --build-system native "${sdk_options[@]}" --scratch-path "$PWD/.build/native" "$@" --cache-path "$PWD/.build/cache" --config-path "$PWD/.build/config" --security-path "$PWD/.build/security"
+# Release builds override these (see .github/workflows/release.yml).
+VERSION="${VERSION:-0.15.1}"
+BUILD="${BUILD:-16}"
 APP=WoodShop.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
@@ -28,8 +31,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundleIdentifier</key><string>com.local.woodshop</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.15.1</string>
-<key>CFBundleVersion</key><string>16</string>
+<key>CFBundleShortVersionString</key><string>${VERSION}</string>
+<key>CFBundleVersion</key><string>${BUILD}</string>
 <key>CFBundleDocumentTypes</key><array><dict>
 <key>CFBundleTypeName</key><string>WoodShop Project</string>
 <key>CFBundleTypeRole</key><string>Editor</string>

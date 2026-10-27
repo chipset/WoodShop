@@ -12,7 +12,7 @@ enum ModelValidation {
         guard valid(p.thicknessAxis),valid(p.grainDirection),p.cuts.allSatisfy({ valid($0.faceAxis) && valid($0.runAxis) && ($0.faceAxis == nil || $0.faceAxis != $0.runAxis) }),
               (p.operations ?? []).allSatisfy({ valid($0.axis) }),p.trims.allSatisfy({ valid($0.axis) && valid($0.run) && $0.axis != $0.run }),
               (p.patterns ?? []).allSatisfy({ valid($0.axis) }),
-              (p.edges ?? []).allSatisfy({ (0..<3).contains($0.axis1) && (0..<3).contains($0.axis2) && ($0.kind == .arch || $0.axis1 != $0.axis2) && $0.size.isFinite && $0.size > 0 }) else { return "Invalid part or machining axis." }
+              (p.edges ?? []).allSatisfy({ (0..<3).contains($0.axis1) && (0..<3).contains($0.axis2) && ($0.kind == .arch || $0.axis1 != $0.axis2) && $0.size.isFinite && $0.size > 0 && ($0.from ?? 0).isFinite && ($0.to ?? 1).isFinite && ($0.from ?? 0) >= 0 && (($0.from == nil || $0.to == nil) || $0.to! > $0.from!) }) else { return "Invalid part or machining axis." }
         if p.cuts.contains(where: { c in (c.planes ?? []).contains { !finite($0.p) || !finite($0.n) } }) { return "Invalid angled cut plane." }
         if let profile = p.profile, !valid(profile.u) || !valid(profile.v) || profile.u == profile.v { return "Invalid curve plane." }
         return nil

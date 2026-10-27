@@ -169,3 +169,68 @@ final class MeshInterchangeTests: XCTestCase {
         XCTAssertEqual(second.origin.z, -7, accuracy: 1e-9)
     }
 }
+
+final class ImportedBoardTests: XCTestCase {
+    private func cube(_ lo: SIMD3<Double>, _ size: SIMD3<Double>) -> [[SIMD3<Double>]] {
+        var c: [SIMD3<Double>] = []
+        for i in 0..<8 { c.append(lo + SIMD3(Double(i & 1) * size.x, Double((i >> 1) & 1) * size.y, Double((i >> 2) & 1) * size.z)) }
+        let quads: [[Int]] = [[0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5]]
+        return quads.map { q in q.map { c[$0] } }
+    }
+
+    func testRectangularSolidsBecomeBoardsWithThicknessAndGrain() throws {
+        // A 24 x 0.75 x 10 inch shelf (Y up): thickness is Y, grain is X.
+        let contents = MeshFileContents(groups: [MeshGroup(name: "Walnut shelf", faces: cube(SIMD3(1, 2, 3), SIMD3(24, 0.75, 10)))])
+        let result = MeshIO.parts(from: contents, scale: 1, zUp: false, baseName: "x")
+        let board = try XCTUnwrap(result.parts.first)
+        XCTAssertNil(board.mesh)
+        XCTAssertEqual(board.species, .walnut)
+        XCTAssertEqual(board.materialAxes.t, 1)
+        XCTAssertEqual(board.materialAxes.l, 0)
+        XCTAssertEqual(board.size, SIMD3(24, 0.75, 10))
+        XCTAssertEqual(board.origin, SIMD3(1, 2, 3))
+        XCTAssertEqual(CutList.rows(result.parts).first?.l ?? 0, 24, accuracy: 1e-9)
+        XCTAssertTrue(result.notes.contains { $0.contains("boards") })
+    }
+
+    func testStandingPostsGetVerticalGrainAndMillimeterSizesRound() throws {
+        // 38 x 89 x 900 mm stud standing along Z in a Z-up file -> 1.4961 x 3.5039 x 35.4331 in, grain vertical (model Y).
+        let contents = MeshFileContents(groups: [MeshGroup(name: "Stud", faces: cube(.zero, SIMD3(38, 89, 900)))])
+        let result = MeshIO.parts(from: contents, scale: 1 / 25.4, zUp: true, baseName: "x")
+        let board = try XCTUnwrap(result.parts.first)
+        XCTAssertNil(board.mesh)
+        XCTAssertEqual(board.grainAxis, 1)
+        XCTAssertEqual(board.size.y, 900 / 25.4, accuracy: 1e-4)
+        XCTAssertEqual(board.size[board.materialAxes.t], 38 / 25.4, accuracy: 1e-4)
+    }
+
+    func testShapedSolidsAndTheOffSwitchKeepTheirMesh() throws {
+        var notched = cube(.zero, SIMD3(4, 1, 2))
+        notched.removeAll()
+        // L-shaped block: not a box, stays a mesh solid.
+        var p = Part(name: "L", origin: .zero, size: SIMD3(4, 1, 4), species: .oak)
+        p.cuts = [Cut(kind: "Dado", lo: SIMD3(0, 0, 2), hi: SIMD3(2, 1, 4))]
+        let polys = Geo.polys(for: p)
+        let faces = polys.map { $0.pts }
+        let shaped = MeshIO.parts(from: MeshFileContents(groups: [MeshGroup(name: "L", faces: faces)]), scale: 1, zUp: false, baseName: "x")
+        XCTAssertEqual(shaped.parts.count, 1)
+        XCTAssertNotNil(shaped.parts[0].mesh)
+        let off = MeshIO.parts(from: MeshFileContents(groups: [MeshGroup(name: "Box", faces: cube(.zero, SIMD3(4, 1, 2)))]), scale: 1, zUp: false, baseName: "x", boardsFromBlocks: false)
+        XCTAssertNotNil(off.parts[0].mesh)
+    }
+
+    func testExportedBoardsComeBackAsBoards() throws {
+        var a = Part(name: "Oak top", origin: SIMD3(0, 30, 0), size: SIMD3(48, 1.5, 24), species: .oak)
+        a.thicknessAxis = 1; a.grainDirection = 0
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("b-\(UUID().uuidString).dae")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try MeshIO.write(.dae, parts: [a], millimeters: false, url: url)
+        let contents = try MeshIO.read(url)
+        let back = MeshIO.parts(from: contents, scale: contents.inchesPerUnit ?? 1, zUp: contents.zUp ?? true, baseName: "x")
+        let board = try XCTUnwrap(back.parts.first)
+        XCTAssertNil(board.mesh)
+        XCTAssertEqual(board.size, a.size)
+        XCTAssertEqual(board.species, .oak)
+        XCTAssertEqual(board.materialAxes.l, 0)
+    }
+}

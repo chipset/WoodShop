@@ -1,0 +1,37 @@
+name: Release
+
+# Pushing a tag such as v0.16.0 tests the code, builds the app and attaches the zip to a GitHub release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: swift test
+      - name: Build the app
+        run: VERSION="${GITHUB_REF_NAME#v}" BUILD="${GITHUB_RUN_NUMBER}" ./build_app.sh
+      - name: Package
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir stage
+          cp -R WoodShop.app stage/
+          cp LICENSE stage/LICENSE.txt
+          (cd stage && ditto -c -k . "../WoodShop-${VERSION}-macOS.zip")
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ZIP="WoodShop-${VERSION}-macOS.zip"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$ZIP" --title "WoodShop ${VERSION}" --generate-notes
+          fi

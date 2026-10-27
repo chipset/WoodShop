@@ -234,3 +234,128 @@ final class MergedFeatureTests: XCTestCase {
         XCTAssertEqual(Recents.urls.map(\.lastPathComponent), ["a.wood"])
     }
 }
+
+final class PartialEdgeTests: XCTestCase {
+    private func volume(_ part: Part) -> Double {
+        var v = 0.0
+        for poly in Geo.polys(for: part) {
+            for i in 1..<(poly.pts.count - 1) { v += simd_dot(poly.pts[0], simd_cross(poly.pts[i], poly.pts[i + 1])) / 6.0 }
+        }
+        return v
+    }
+    private func board() -> Part {
+        var p = Part(name: "B", origin: .zero, size: SIMD3(10, 1, 2), species: .oak)
+        p.thicknessAxis = 1; p.grainDirection = 0
+        return p
+    }
+
+    func testPartialChamferRemovesOnlyItsStretch() {
+        var p = board()
+        // top face (+Y) / +Z face edge runs along X
+        var e = EdgeProfile(kind: .chamfer, axis1: 1, pos1: true, axis2: 2, pos2: true, size: 0.5)
+        let full = 10.0 * 0.5 * 0.5 / 2
+        p.edges = [e]
+        XCTAssertEqual(20 - volume(p), full, accuracy: 1e-9)
+        e.from = 2; e.to = 6
+        p.edges = [e]
+        XCTAssertEqual(20 - volume(p), 4 * 0.5 * 0.5 / 2, accuracy: 1e-9)
+        e.from = nil; e.to = 3   // from the start to 3
+        p.edges = [e]
+        XCTAssertEqual(20 - volume(p), 3 * 0.5 * 0.5 / 2, accuracy: 1e-9)
+        e.from = 7; e.to = nil   // from 7 to the end
+        p.edges = [e]
+        XCTAssertEqual(20 - volume(p), 3 * 0.5 * 0.5 / 2, accuracy: 1e-9)
+        XCTAssertNil(ModelValidation.part(p))
+    }
+
+    func testPartialRoundoverMatchesFullRoundoverPerUnitLength() {
+        var full = board()
+        full.edges = [EdgeProfile(kind: .roundover, axis1: 1, pos1: true, axis2: 2, pos2: true, size: 0.4)]
+        var part = board()
+        part.edges = [EdgeProfile(kind: .roundover, axis1: 1, pos1: true, axis2: 2, pos2: true, size: 0.4, from: 1, to: 6)]
+        let perLength = (20 - volume(full)) / 10
+        XCTAssertEqual(20 - volume(part), perLength * 5, accuracy: perLength * 5 * 0.05)
+        let ideal = 0.16 * (1 - .pi / 4) * 5
+        XCTAssertEqual(20 - volume(part), ideal, accuracy: ideal * 0.08)
+    }
+
+    func testPartialEdgesSurviveRotationAndResizing() {
+        var p = board()
+        p.edges = [EdgeProfile(kind: .chamfer, axis1: 1, pos1: true, axis2: 2, pos2: true, size: 0.5, from: 1, to: 4)]
+        let before = volume(p)
+        for axis in 0..<3 {
+            let turned = p.rotated90(axis: axis)
+            XCTAssertEqual(volume(turned), before, accuracy: 1e-9, "rotated about \(axis)")
+            XCTAssertEqual(turned.size.x * turned.size.y * turned.size.z, 20, accuracy: 1e-9)
+            XCTAssertNil(ModelValidation.part(turned))
+            // Twice is the original orientation turned 180 degrees: still the same material.
+            XCTAssertEqual(volume(turned.rotated90(axis: axis)), before, accuracy: 1e-9)
+        }
+        var longer = p
+        longer.size.x = 14
+        XCTAssertEqual(14 * 2 - volume(longer), 3 * 0.5 * 0.5 / 2, accuracy: 1e-9)
+    }
+
+    func testPartialEdgesCombineWithJoineryAndHistory() {
+        var p = board()
+        p.cuts = [Cut(kind: "Pocket", lo: SIMD3(4, 0.5, 0.5), hi: SIMD3(6, 1, 1.5), faceAxis: 1, facePositive: true, runAxis: 0)]
+        let base = volume(p)
+        p.edges = [EdgeProfile(kind: .chamfer, axis1: 1, pos1: true, axis2: 2, pos2: true, size: 0.25, from: 0, to: 3)]
+        XCTAssertEqual(base - volume(p), 3 * 0.25 * 0.25 / 2, accuracy: 1e-9)
+        p.featureOrder = p.featureSteps
+        XCTAssertEqual(base - volume(p), 3 * 0.25 * 0.25 / 2, accuracy: 1e-9)
+    }
+
+    func testBadPartialRangesAreRejected() {
+        var p = board()
+        p.edges = [EdgeProfile(kind: .chamfer, axis1: 1, pos1: true, axis2: 2, pos2: true, size: 0.5, from: 5, to: 2)]
+        XCTAssertNotNil(ModelValidation.part(p))
+        p.edges = [EdgeProfile(kind: .chamfer, axis1: 1, pos1: true, axis2: 2, pos2: true, size: 0.5, from: -1, to: 2)]
+        XCTAssertNotNil(ModelValidation.part(p))
+    }
+}
+
+final class HardwareShapeTests: XCTestCase {
+    private func volume(_ part: Part) -> Double {
+        var v = 0.0
+        for poly in Geo.polys(for: part) {
+            for i in 1..<(poly.pts.count - 1) { v += simd_dot(poly.pts[0], simd_cross(poly.pts[i], poly.pts[i + 1])) / 6.0 }
+        }
+        return v
+    }
+
+    func testEveryHardwareItemGetsAValidSolidShape() throws {
+        let items = Stock.all.filter { $0.hardware != nil }
+        XCTAssertEqual(items.count, 7)
+        for item in items {
+            let d = Document(startRecoveryTimer: false, recoveryLocation: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json"))
+            d.stock = item
+            d.addStock()
+            let part = try XCTUnwrap(d.parts.first, item.name)
+            XCTAssertEqual(part.hardware, true)
+            XCTAssertNotNil(part.mesh, "\(item.name) has a shape")
+            XCTAssertNil(ModelValidation.part(part), item.name)
+            // Outward-facing, non-empty, and not bigger than its stock box.
+            let box = part.size.x * part.size.y * part.size.z
+            XCTAssertGreaterThan(volume(part), box * 0.02, "\(item.name) has volume")
+            XCTAssertLessThan(volume(part), box * 1.0001, "\(item.name) fits its box")
+            XCTAssertFalse(Geo.polys(for: part).isEmpty)
+            // Still excluded from lumber and CNC output.
+            XCTAssertTrue(CutList.rows(d.parts).isEmpty)
+        }
+    }
+
+    func testShapesSurviveRotationResizingAndSaving() throws {
+        let d = Document(startRecoveryTimer: false, recoveryLocation: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json"))
+        d.stock = Stock.all.first { $0.name.hasPrefix("Knob") }!
+        d.addStock()
+        let id = d.parts[0].id
+        let before = volume(d.parts[0])
+        d.rotateSelected(axis: 0)
+        XCTAssertEqual(volume(d.part(id)!), before, accuracy: 1e-6)
+        let data = try JSONEncoder().encode(d.project)
+        let back = try Document.decodeProject(data)
+        XCTAssertEqual(back.parts[0].mesh, d.parts[0].mesh)
+        XCTAssertNil(ModelValidation.part(back.parts[0]))
+    }
+}

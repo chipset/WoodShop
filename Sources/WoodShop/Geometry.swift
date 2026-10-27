@@ -77,7 +77,7 @@ enum Geo {
     /// All boundary polygons of a part, trims applied.
     static func polys(for p: Part) -> [Poly] {
         if p.featureOrder != nil || !(p.patterns ?? []).isEmpty { return FeatureReplay.polygons(p) }
-        return p.profile == nil && p.mesh == nil && (p.operations ?? []).isEmpty && !p.cuts.contains(where: { $0.relief != nil || $0.allowance != nil || $0.planes != nil })
+        return p.profile == nil && p.mesh == nil && (p.operations ?? []).isEmpty && !p.cuts.contains(where: { $0.relief != nil || $0.allowance != nil || $0.planes != nil }) && !p.hasPartialEdges
             ? polys(boxes: solid(p), planes: p.clipPlanes) : SolidCSG.polys(for: p)
     }
 

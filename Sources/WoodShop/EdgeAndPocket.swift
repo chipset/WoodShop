@@ -23,6 +23,9 @@ struct EdgeAndPocketSection: View {
     @State private var edgeKind = EdgeKind.roundover
     @State private var neighbor = 0
     @State private var edgeSize = 0.25
+    @State private var fullLength = true
+    @State private var edgeStart = 0.0
+    @State private var edgeLength = 6.0
 
     private var u: Int { (face.axis + 1) % 3 }
     private var v: Int { (face.axis + 2) % 3 }
@@ -40,7 +43,7 @@ struct EdgeAndPocketSection: View {
                 ExistingEdges(doc: doc, part: part)
             }.padding(4)
         }
-        .onAppear { pocketAcross = part.size[v] / 2 }
+        .onAppear { pocketAcross = part.size[v] / 2; edgeLength = part.size[u] }
     }
 
     private var pocket: some View {
@@ -72,11 +75,20 @@ struct EdgeAndPocketSection: View {
                 ForEach(neighbors.indices, id: \.self) { Text(neighbors[$0].label).tag($0) }
             }
             DimField(label: edgeKind == .chamfer ? "Leg" : "Radius", value: $edgeSize, metric: doc.metric, minimum: 1 / 64)
-            Text("The profile runs the full length of the edge. A radius of half the board's width or thickness rounds the whole edge.").font(.caption).foregroundStyle(.secondary)
+            let n = neighbors[min(neighbor, neighbors.count - 1)]
+            let runAxis = 3 - face.axis - n.axis
+            Toggle("Full length of the edge", isOn: $fullLength)
+            if !fullLength {
+                DimField(label: "Start (\(name(runAxis)))", value: $edgeStart, metric: doc.metric, minimum: 0)
+                DimField(label: "Length", value: $edgeLength, metric: doc.metric, minimum: 1 / 64)
+                Text("Measured from the board's minimum \(name(runAxis)) end. The profile stops with a square end, like a stopped router cut.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("A radius of half the board's width or thickness rounds the whole edge.").font(.caption).foregroundStyle(.secondary)
+            }
             Button("Add \(edgeKind.rawValue)") {
-                let n = neighbors[min(neighbor, neighbors.count - 1)]
-                let e = EdgeProfile(kind: edgeKind == .chamfer ? .chamfer : .roundover, axis1: face.axis, pos1: face.positive,
+                var e = EdgeProfile(kind: edgeKind == .chamfer ? .chamfer : .roundover, axis1: face.axis, pos1: face.positive,
                                     axis2: n.axis, pos2: n.positive, size: edgeSize)
+                if !fullLength { e.from = edgeStart; e.to = edgeStart + edgeLength }
                 doc.edit(part.id) { $0.edges = ($0.edges ?? []) + [e] }
                 doc.status = "\(edgeKind.rawValue) added."
             }
@@ -91,7 +103,7 @@ struct ExistingEdges: View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(part.edges ?? []) { e in
                 HStack {
-                    Text("\(e.kind.rawValue.capitalized) \(doc.fmt(e.size)) on \(FaceRef(part: part.id, axis: e.axis1, positive: e.pos1).label)\(e.kind == .arch ? "" : " / " + FaceRef(part: part.id, axis: e.axis2, positive: e.pos2).label)")
+                    Text("\(e.kind.rawValue.capitalized) \(doc.fmt(e.size)) on \(FaceRef(part: part.id, axis: e.axis1, positive: e.pos1).label)\(e.kind == .arch ? "" : " / " + FaceRef(part: part.id, axis: e.axis2, positive: e.pos2).label)\(e.isPartial ? ", \(doc.fmt(e.from ?? 0)) to \(doc.fmt(e.to ?? part.size[3 - e.axis1 - e.axis2]))" : "")")
                         .font(.caption)
                     Spacer()
                     Button { doc.edit(part.id) { $0.edges?.removeAll { $0.id == e.id }; if $0.edges?.isEmpty == true { $0.edges = nil } } } label: { Image(systemName: "trash") }

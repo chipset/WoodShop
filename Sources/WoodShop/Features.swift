@@ -220,6 +220,10 @@ enum FeatureReplay {
             let reach = max(1000,norm(part.size) * 4)
             result = SolidCSG.intersection(result,Geo.polys(boxes:[Box(lo:SIMD3(repeating:-reach),hi:SIMD3(repeating:reach))],planes:edgePlanes))
         }
+        if through == nil {
+            let partial = part.partialEdgeTools
+            if !partial.isEmpty { result = SolidCSG.subtract(result,partial) }
+        }
         return result
     }
     static func validate(_ part: Part) throws {

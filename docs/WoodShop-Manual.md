@@ -229,7 +229,7 @@ Lumber sizes are actual (dressed) dimensions, so a 1×4 is 3/4" × 3 1/2".
 
 Enter the width, depth, height, material thickness and (where relevant) clearance. The parts are linked to named parameters, so you can resize the whole project later (section 16).
 
-**Hardware.** Open **Add Stock**, pick an item such as *Hinge 3in butt*, *Drawer slide 18in*, *Bar pull 4in*, *Knob 1-1/4in*, *Corner brace 3in*, *Screw #8 x 1-1/4* or *Shelf pin*, and click **Add Board**. The part is brass or steel, flagged as hardware, and appears in the **Hardware** filter and the buy list. Each is a simple block that shows where it goes; it is not a detailed model.
+**Hardware.** Open **Add Stock**, pick an item such as *Hinge 3in butt*, *Drawer slide 18in*, *Bar pull 4in*, *Knob 1-1/4in*, *Corner brace 3in*, *Screw #8 x 1-1/4* or *Shelf pin*, and click **Add Board**. The part is brass or steel, flagged as hardware, and appears in the **Hardware** filter and the buy list. Each has a recognizable stand-in shape (a hinge with leaves and knuckles, a telescoping drawer slide, a pull on two posts, a knob, a flat brace with screw heads, a screw, a shelf pin) sized to the stock item; these are display models, not manufacturer geometry, and you can resize them like any part.
 
 ## 8. Selecting, hiding and organizing
 
@@ -361,7 +361,7 @@ Click **Add Pocket Hole**. In the cut list the board shows an extra joint. In fl
 3. Set the leg or radius.
 4. Click **Add Chamfer / Add Roundover**.
 
-The profile runs the full length of the edge. A radius of half the board's thickness or width rounds the whole edge. Existing profiles are listed (under **Existing edge profiles**) with a trash can. In flat CNC output, the outline is the full blank and a note reminds you the profile needs a separate setup (router bit or sanding).
+By default the profile runs the full length of the edge; turn off **Full length of the edge** and give a **Start** and **Length** to make a stopped chamfer or roundover that ends with a square end, like a stopped router cut. Partial profiles follow the board when you resize or turn it. A radius of half the board's thickness or width rounds the whole edge. Existing profiles are listed (under **Existing edge profiles**) with a trash can. In flat CNC output, the outline is the full blank and a note reminds you the profile needs a separate setup (router bit or sanding).
 
 **Curved boards.** The Inspector's **Outline & curves** group and the **Edit curves…** button open the *board shape* editor. It works in the board's face plane:
 
@@ -495,6 +495,7 @@ What happens on import:
 
 - DAE, KMZ declare their units; other 3D formats ask you to choose **Millimeters** or **Inches** and whether the **Z axis points up** (the usual convention for SketchUp, CAD and 3D printing).
 - Each separate closed solid becomes its own board, named after its group or layer.
+- A solid that is just a rectangular block becomes a real **board**: its thinnest side is the thickness, its longest side is the grain direction, and the species comes from its name when it contains one (for example "Walnut shelf" or "Maple leg"). Untick **Turn rectangular solids into boards** in the import dialog to keep every solid as a generic shape. Shaped solids (with notches, curves or holes) stay as shapes.
 - WoodShop welds vertices, repairs inconsistent face direction and closes small seams.
 - **Skipped:** open surfaces, shapes thinner than 1/32", and shapes with more than 25,000 triangles. The status bar says how many.
 - Flat outlines become boards using the thickness set in the Rectangle tool.
@@ -697,8 +698,8 @@ SketchUp users can also export WoodShop designs: **File → Export 3D Model → 
 ## D. Limits
 
 - Boards are boxes with machined features. You cannot sculpt arbitrary surfaces; curved outlines, chamfers, roundovers, arches and imported solids cover the common cases.
-- Chamfers and roundovers are applied to a board's whole edge length. Partial-length profiles are not supported.
-- Hardware is represented by simple blocks.
+- Chamfers and roundovers stop with a square end when they are partial; they do not run out in a curve.
+- Hardware shapes are simple stand-ins, not manufacturer geometry.
 - Round holes are drawn as many-sided polygons in the 3D view; CNC exports use accurate circles.
 - Imported solids must be closed; the importer rejects open surfaces.
 - SKP and DWG files are not supported (use DAE/STL and DXF).

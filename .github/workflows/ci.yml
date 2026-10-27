@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+      - name: Build the app bundle
+        run: |
+          ./build_app.sh
+          test -x WoodShop.app/Contents/MacOS/WoodShop
+          test -f WoodShop.app/Contents/Resources/AppIcon.icns
+          test -f WoodShop.app/Contents/Resources/LICENSE.txt
