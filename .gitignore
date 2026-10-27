@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+*.app/
+.DS_Store
+xcuserdata/
+Models/
+*.wood
+# Private model generator derived from purchased cabinet plans.
+Tools/create_wittworks_project.py
