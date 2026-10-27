@@ -135,17 +135,17 @@ enum SolidCSG {
             ?? Geo.polys(boxes: [Box(lo: .zero, hi: part.size)], planes: [])
         for cut in part.cuts where cut.suppressed != true {
             if cut.additive { result = union(result, Geo.polys(boxes: [Box(lo: cut.lo, hi: cut.hi)], planes: [])) }
-            else { result = subtract(result, cut.relief != nil || cut.allowance != nil ? cut.machiningPolygons(part: part) : Geo.polys(boxes: [Box(lo: cut.lo, hi: cut.hi)], planes: [])) }
+            else { result = subtract(result, cut.relief != nil || cut.allowance != nil ? cut.machiningPolygons(part: part) : Geo.polys(boxes: [Box(lo: cut.lo, hi: cut.hi)], planes: (cut.planes ?? []).map { ($0.p, $0.n) })) }
         }
         for operation in part.machiningOperations where operation.suppressed != true {
             let tool = operation.polygons(size:part.size).map { p -> Geo.Poly in var p = p; p.source = operation.patternID ?? operation.id; return p }
             result = subtract(result,tool)
         }
-        if !part.trims.isEmpty {
+        if !part.trims.isEmpty || part.hasEdgeProfiles {
             var lo = SIMD3<Double>.zero, hi = part.size
             for cut in part.cuts where cut.additive && cut.suppressed != true { lo = pointwiseMin(lo, cut.lo); hi = pointwiseMax(hi, cut.hi) }
             // The padding avoids coincident outer faces; only the trim planes affect the result.
-            let clipper = Geo.polys(boxes: [Box(lo: lo - 1, hi: hi + 1)], planes: part.trimPlanes)
+            let clipper = Geo.polys(boxes: [Box(lo: lo - 1, hi: hi + 1)], planes: part.clipPlanes)
             result = intersection(result, clipper)
         }
         return result

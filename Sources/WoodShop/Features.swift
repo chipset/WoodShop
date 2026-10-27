@@ -167,6 +167,7 @@ extension Part {
         switch step.kind {
         case .cut:
             guard let c = cuts.first(where: { $0.id == step.feature }), c.suppressed != true else { return [] }
+            if c.planes != nil { return Geo.polys(boxes:[Box(lo:c.lo,hi:c.hi)],planes:c.planes!.map { ($0.p,$0.n) }) }
             return c.additive ? Geo.polys(boxes:[Box(lo:c.lo,hi:c.hi)],planes:[]) : c.machiningPolygons(part:self)
         case .operation:
             guard let op = operations?.first(where: { $0.id == step.feature }), op.suppressed != true else { return [] }
@@ -214,6 +215,11 @@ enum FeatureReplay {
                 result = additive ? SolidCSG.union(result,tool) : SolidCSG.subtract(result,tool)
             }
         }
+        let edgePlanes = part.edgePlanes
+        if through == nil, !edgePlanes.isEmpty {
+            let reach = max(1000,norm(part.size) * 4)
+            result = SolidCSG.intersection(result,Geo.polys(boxes:[Box(lo:SIMD3(repeating:-reach),hi:SIMD3(repeating:reach))],planes:edgePlanes))
+        }
         return result
     }
     static func validate(_ part: Part) throws {
@@ -227,7 +233,7 @@ enum FeatureReplay {
             case .operation:
                 if let op = part.operations?.first(where: { $0.id == step.feature }),op.suppressed != true,let message = op.validation(size:part.size) { throw ModelValidation.Failure(message:prefix + message) }
             case .cut:
-                if let cut = part.cuts.first(where: { $0.id == step.feature }),cut.suppressed != true,cut.mateID == nil,let axis = cut.faceAxis,!cut.additive,(0..<3).contains(axis),cut.hi[axis]-cut.lo[axis] > part.size[axis]+1e-6 {
+                if let cut = part.cuts.first(where: { $0.id == step.feature }),cut.suppressed != true,cut.mateID == nil,cut.planes == nil,let axis = cut.faceAxis,!cut.additive,(0..<3).contains(axis),cut.hi[axis]-cut.lo[axis] > part.size[axis]+1e-6 {
                     throw ModelValidation.Failure(message:prefix + "pocket depth exceeds the stock thickness. Edit the depth or suppress this feature.")
                 }
             case .trim: break

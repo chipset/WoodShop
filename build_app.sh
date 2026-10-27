@@ -16,6 +16,8 @@ APP=WoodShop.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp .build/native/release/WoodShop "$APP/Contents/MacOS/WoodShop"
+mkdir -p "$APP/Contents/Resources"
+[ -f Resources/AppIcon.icns ] && cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -24,8 +26,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundleExecutable</key><string>WoodShop</string>
 <key>CFBundleIdentifier</key><string>com.local.woodshop</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.14</string>
-<key>CFBundleVersion</key><string>14</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>CFBundleShortVersionString</key><string>0.15</string>
+<key>CFBundleVersion</key><string>15</string>
 <key>CFBundleDocumentTypes</key><array><dict>
 <key>CFBundleTypeName</key><string>WoodShop Project</string>
 <key>CFBundleTypeRole</key><string>Editor</string>

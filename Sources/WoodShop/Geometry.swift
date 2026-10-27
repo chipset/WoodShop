@@ -77,8 +77,8 @@ enum Geo {
     /// All boundary polygons of a part, trims applied.
     static func polys(for p: Part) -> [Poly] {
         if p.featureOrder != nil || !(p.patterns ?? []).isEmpty { return FeatureReplay.polygons(p) }
-        return p.profile == nil && p.mesh == nil && (p.operations ?? []).isEmpty && !p.cuts.contains(where: { $0.relief != nil || $0.allowance != nil })
-            ? polys(boxes: solid(p), planes: p.trimPlanes) : SolidCSG.polys(for: p)
+        return p.profile == nil && p.mesh == nil && (p.operations ?? []).isEmpty && !p.cuts.contains(where: { $0.relief != nil || $0.allowance != nil || $0.planes != nil })
+            ? polys(boxes: solid(p), planes: p.clipPlanes) : SolidCSG.polys(for: p)
     }
 
     static func polys(boxes: [Box], planes: [(p: SIMD3<Double>, n: SIMD3<Double>)]) -> [Poly] {
@@ -190,7 +190,7 @@ enum Geo {
         var idx: [UInt32] = []
         let c = p.size / 2
         func nudge(_ pt: SIMD3<Double>) -> SCNVector3 { vec(c + (pt - c) * 1.0005) }
-        if p.profile != nil || p.mesh != nil || !(p.operations ?? []).isEmpty || !(p.patterns ?? []).isEmpty || p.featureOrder != nil || p.cuts.contains(where: { $0.relief != nil || $0.allowance != nil }) {
+        if p.profile != nil || p.mesh != nil || !(p.operations ?? []).isEmpty || !(p.patterns ?? []).isEmpty || p.featureOrder != nil || p.cuts.contains(where: { $0.relief != nil || $0.allowance != nil || $0.planes != nil }) || p.hasEdgeProfiles {
             // Hide coplanar triangulation seams and the tiny facets along a smooth curve.
             struct EdgeKey: Hashable { var a: SIMD3<Double>; var b: SIMD3<Double> }
             var edges: [EdgeKey: (a: SIMD3<Double>, b: SIMD3<Double>, normals: [SIMD3<Double>])] = [:]

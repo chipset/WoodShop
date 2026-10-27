@@ -118,7 +118,7 @@ struct StockPopover: View {
         VStack(alignment:.leading,spacing:14) {
             Label("Add stock",systemImage:"plus.square").font(.headline)
             Picker("Stock",selection:$doc.stock) { ForEach(Stock.all) { Text($0.name).tag($0) } }
-            Picker("Material",selection:$doc.species) { ForEach(Species.allCases) { Text($0.rawValue).tag($0) } }
+            Picker("Material",selection:$doc.species) { ForEach(Species.woods) { Text($0.rawValue).tag($0) } }
             DimField(label:"Length",value:$doc.stockLength,metric:doc.metric,minimum:1/32)
             Button("Start from a cabinet, drawer, shelf, or workbench…") { dismiss();DispatchQueue.main.async { doc.showProjectPreset = true } }
             Divider()

@@ -20,7 +20,7 @@ struct SetupProfilesPanel: View {
                 ScrollView {
                     VStack(alignment:.leading,spacing:12) {
                         TextField("Setup name",text:$draft.name).textFieldStyle(.roundedBorder)
-                        Picker("Material",selection:$draft.species) { ForEach(Species.allCases) { Text($0.rawValue).tag($0) } }
+                        Picker("Material",selection:$draft.species) { ForEach(Species.woods) { Text($0.rawValue).tag($0) } }
                         HStack { DimField(label:"Sheet length",value:$draft.sheetLength,metric:draft.metric,minimum:1/32); DimField(label:"Sheet width",value:$draft.sheetWidth,metric:draft.metric,minimum:1/32) }
                         DimField(label:"Actual thickness",value:$draft.measuredThickness,metric:draft.metric,minimum:1/32)
                         Text("Measure your stock; nominal plywood thickness can differ from the material on your machine.").font(.caption).foregroundStyle(.secondary)

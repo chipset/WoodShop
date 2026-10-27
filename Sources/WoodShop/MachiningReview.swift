@@ -140,7 +140,7 @@ enum MachiningReview {
             if let setup,abs(part.size[part.materialAxes.t]-setup.measuredThickness)>1e-5 {
                 add(nil,part.size/2,.information,"stock-thickness","this part needs \(Units.format(part.size[part.materialAxes.t],metric:project.metric)) stock; the saved setup measures \(Units.format(setup.measuredThickness,metric:project.metric)). Confirm the sheet-specific stock thickness.")
             }
-            if part.trims.contains(where: { $0.suppressed != true }) { add(nil,part.size/2,.warning,"angled-setup","angled end cuts/bevels require a separate setup; the flat file is their projected outline.") }
+            if part.trims.contains(where: { $0.suppressed != true }) || part.hasEdgeProfiles { add(nil,part.size/2,.warning,"angled-setup","angled end cuts/bevels require a separate setup; the flat file is their projected outline.") }
             if part.mesh != nil { add(nil,part.size/2,.warning,"3d-solid","the flat export shows this solid's projection. Use the STL/OBJ and a suitable 3D strategy for shaped surfaces.") }
         }
         var seen: Set<String> = []

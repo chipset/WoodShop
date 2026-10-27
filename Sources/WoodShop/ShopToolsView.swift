@@ -3,13 +3,13 @@ import AppKit
 import UniformTypeIdentifiers
 
 enum ShopPage: Int,CaseIterable,Identifiable {
-    case checks,relationships,hardware,materials,sheets,delivery
+    case checks,relationships,hardware,materials,sheets,delivery,buy
     var id: Int { rawValue }
     var title: String {
-        switch self { case .checks:return "Assembly checks";case .relationships:return "Relationships";case .hardware:return "Hardware";case .materials:return "Materials & cost";case .sheets:return "Sheets & offcuts";case .delivery:return "Documents & recovery" }
+        switch self { case .checks:return "Assembly checks";case .relationships:return "Relationships";case .hardware:return "Hardware";case .materials:return "Materials & cost";case .sheets:return "Sheets & offcuts";case .delivery:return "Documents & recovery";case .buy:return "Buy list" }
     }
     var symbol: String {
-        switch self { case .checks:return "checkmark.shield";case .relationships:return "point.3.connected.trianglepath.dotted";case .hardware:return "screwdriver";case .materials:return "square.stack.3d.up";case .sheets:return "square.grid.2x2";case .delivery:return "doc.text" }
+        switch self { case .checks:return "checkmark.shield";case .relationships:return "point.3.connected.trianglepath.dotted";case .hardware:return "screwdriver";case .materials:return "square.stack.3d.up";case .sheets:return "square.grid.2x2";case .delivery:return "doc.text";case .buy:return "cart" }
     }
 }
 
@@ -192,7 +192,7 @@ struct ShopMaterialsPanel: View {
                 } else { Text("Select a part to assign edge banding and rough-stock allowance.").foregroundStyle(.secondary) }
                 GroupBox("Your material prices") {
                     VStack(alignment:.leading,spacing:12) {
-                        Picker("Material",selection:$species) { ForEach(Species.allCases) { Text($0.rawValue).tag($0) } }
+                        Picker("Material",selection:$species) { ForEach(Species.woods) { Text($0.rawValue).tag($0) } }
                         HStack {
                             VStack(alignment:.leading) { Text("Sheet cost per square foot").font(.caption);TextField("Sheet cost",value:$squareRate,format:.number) }
                             VStack(alignment:.leading) { Text("Lumber cost per board foot").font(.caption);TextField("Lumber cost",value:$boardRate,format:.number) }
@@ -233,7 +233,7 @@ struct SheetInventoryPanel: View {
             Toggle("Use enabled offcuts for CNC nesting",isOn:Binding(get:{doc.studio.useOffcuts == true},set:{ value in doc.transaction { doc.studio.useOffcuts = value } }))
             GroupBox("Add measured offcut") {
                 VStack(spacing:12) {
-                    HStack { TextField("Stock label",text:$draft.name).textFieldStyle(.roundedBorder);Picker("Material",selection:$draft.species) { ForEach(Species.allCases) { Text($0.rawValue).tag($0) } } }
+                    HStack { TextField("Stock label",text:$draft.name).textFieldStyle(.roundedBorder);Picker("Material",selection:$draft.species) { ForEach(Species.woods) { Text($0.rawValue).tag($0) } } }
                     HStack { DimField(label:"Length",value:$draft.length,metric:doc.metric,minimum:1/32);DimField(label:"Width",value:$draft.width,metric:doc.metric,minimum:1/32);DimField(label:"Thickness",value:$draft.thickness,metric:doc.metric,minimum:1/32) }
                     HStack { Text("Purchase cost (0 uses material rate)").font(.caption);TextField("Purchase cost",value:$cost,format:.number).textFieldStyle(.roundedBorder);Button("Add offcut") { if doc.transaction({ var stock = draft;stock.id = UUID();stock.cost = cost == 0 ? nil : cost;try stock.validate();doc.studio.offcuts = (doc.studio.offcuts ?? [])+[stock] }) { doc.status = "Added measured offcut. Enable offcut nesting to use it." } } }
                 }.padding(8)

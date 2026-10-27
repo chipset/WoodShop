@@ -192,7 +192,7 @@ final class SceneController: ObservableObject {
             if let pn = nodes[p.id] {
                 if pn.part != p {
                     let geometryChanged = pn.part.size != p.size || pn.part.cuts != p.cuts || pn.part.species != p.species
-                        || pn.part.trims != p.trims || pn.part.profile != p.profile || pn.part.grainDirection != p.grainDirection || pn.part.mesh != p.mesh || pn.part.operations != p.operations || pn.part.patterns != p.patterns || pn.part.featureOrder != p.featureOrder
+                        || pn.part.trims != p.trims || pn.part.edges != p.edges || pn.part.profile != p.profile || pn.part.grainDirection != p.grainDirection || pn.part.mesh != p.mesh || pn.part.operations != p.operations || pn.part.patterns != p.patterns || pn.part.featureOrder != p.featureOrder
                     pn.part = p
                     if geometryChanged { pn.rebuild(section: doc.studio.section, through: through) }
                     pn.place()

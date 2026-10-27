@@ -229,8 +229,10 @@ enum SVGPath {
 
 extension Document {
     func importGeometry() {
-        let panel = NSOpenPanel(); panel.allowedContentTypes = ["svg", "dxf", "obj"].compactMap { UTType(filenameExtension: $0) }; panel.allowsMultipleSelection = false
+        let panel = NSOpenPanel(); panel.allowedContentTypes = (["svg"] + MeshIO.importExtensions).compactMap { UTType(filenameExtension: $0) }; panel.allowsMultipleSelection = false
+        panel.message = "3D models: STL, OBJ, PLY, 3DS, DAE, KMZ, USD/USDZ, DXF 3D faces. Flat outlines: SVG, DXF."
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        if importMesh(url) { return }
         do {
             let data = try Data(contentsOf: url), ext = url.pathExtension.lowercased()
             var scale = 1.0

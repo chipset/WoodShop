@@ -222,7 +222,15 @@ struct JoineryEditor: View {
             VStack(alignment: .leading) {
                 ForEach(part.cuts) { cut in
                     DisclosureGroup(cut.kind) {
-                        CutEditor(doc: doc, partID: part.id, cut: cut)
+                        if cut.planes != nil {
+                            HStack {
+                                Text("Generated shape. Delete it and add a new one to change it.").font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Delete", role: .destructive) { doc.edit(part.id) { $0.cuts.removeAll { $0.id == cut.id }; $0.featureOrder = $0.featureOrder?.filter { $0.feature != cut.id } } }
+                            }
+                        } else {
+                            CutEditor(doc: doc, partID: part.id, cut: cut)
+                        }
                     }
                 }
             }.padding(4)

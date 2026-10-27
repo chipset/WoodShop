@@ -27,11 +27,12 @@ enum CutList {
             let blankSize = hi - lo
             let d = [blankSize[axes.t], blankSize[axes.w], blankSize[axes.l]].map(q)
             let cuts = p.cuts.filter { $0.suppressed != true }.map { c in
-                "\(c.kind)|\(c.lo)|\(c.hi)|\(String(describing: c.faceAxis))|\(String(describing: c.facePositive))|\(String(describing: c.runAxis))|\(String(describing: c.relief))|\(String(describing: c.allowance))"
+                "\(c.kind)|\(c.lo)|\(c.hi)|\(String(describing: c.faceAxis))|\(String(describing: c.facePositive))|\(String(describing: c.runAxis))|\(String(describing: c.relief))|\(String(describing: c.allowance))|\(String(describing: c.planes))"
             }.sorted().joined(separator: ";")
             let trims = p.trims.map { t in
                 "\(t.axis)|\(t.positive)|\(t.run)|\(t.angle)|\(t.farEdge)"
             }.sorted().joined(separator: ";")
+            let edgeKey = (p.edges ?? []).map { "\($0.kind.rawValue)|\($0.axis1)|\($0.pos1)|\($0.axis2)|\($0.pos2)|\($0.size)" }.sorted().joined(separator: ";")
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
             let profile = p.profile.flatMap { try? encoder.encode($0) }.map { String(decoding: $0, as: UTF8.self) } ?? ""
             let operations = p.machiningOperations.filter { $0.suppressed != true }.map { op -> String in var n = op; n.suppressed = nil; n.patternID = nil; n.name = ""; n.id = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!; return (try? encoder.encode(n)).map { String(decoding: $0, as: UTF8.self) } ?? "" }.joined(separator: ";")
@@ -44,8 +45,8 @@ enum CutList {
                 case .trim: return p.trims.first { $0.id == step.feature }.map { "T|\($0.axis)|\($0.angle)|\($0.farEdge)|\($0.suppressed == true)" } ?? ""
                 }
             }.joined(separator:";")
-            let key = cuts.isEmpty && trims.isEmpty && profile.isEmpty && operations.isEmpty && meshKey.isEmpty ? "" : "\(axes)|\(cuts)|\(trims)|\(profile)|\(operations)|\(meshKey)|\(sequenceKey)"
-            let summary = [p.cuts.filter { $0.suppressed != true }.isEmpty ? nil : "\(p.cuts.filter { $0.suppressed != true }.count) joint(s)", p.trims.isEmpty ? nil : "\(p.trims.count) angled cut(s)",
+            let key = cuts.isEmpty && trims.isEmpty && edgeKey.isEmpty && profile.isEmpty && operations.isEmpty && meshKey.isEmpty ? "" : "\(axes)|\(cuts)|\(trims)|\(edgeKey)|\(profile)|\(operations)|\(meshKey)|\(sequenceKey)"
+            let summary = [p.cuts.filter { $0.suppressed != true }.isEmpty ? nil : "\(p.cuts.filter { $0.suppressed != true }.count) joint(s)", p.trims.isEmpty ? nil : "\(p.trims.count) angled cut(s)", edgeKey.isEmpty ? nil : "\(p.edges!.count) edge profile(s)",
                            p.profile == nil ? nil : "Curved outline", operations.isEmpty ? nil : "\(p.machiningOperations.count) machining operation(s)"].compactMap { $0 }.joined(separator: ", ")
             var row = CutRow(machiningKey: key, machining: summary, partIDs: [p.id], labels:[ShopIdentity.label(p)], qty: 1, names: [p.name], species: p.species, t: d[0], w: d[1], l: d[2])
             if var e = map[row.id] {

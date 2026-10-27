@@ -226,7 +226,7 @@ struct LibraryWorkbench: View {
             VStack(alignment: .leading, spacing: 14) {
                 GroupBox("Import geometry") {
                     VStack(alignment: .leading, spacing: 8) {
-                        Button("Import SVG, DXF, or OBJ…") { doc.importGeometry() }
+                        Button("Import 3D model or outline…") { doc.importGeometry() }
                         Text("SVG and DXF closed contours become extruded profiles. OBJ becomes an editable solid mesh. SVG supports paths, polygons, rectangles, ellipses, and transforms; DXF supports polylines and circles. Unsupported entities are reported.").font(.caption)
                     }.padding(8)
                 }

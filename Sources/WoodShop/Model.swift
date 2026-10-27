@@ -8,8 +8,24 @@ import simd
 enum Species: String, Codable, CaseIterable, Identifiable {
     case oak = "Red Oak", maple = "Hard Maple", cherry = "Cherry", walnut = "Walnut"
     case pine = "Pine", poplar = "Poplar", plywood = "Plywood", mdf = "MDF"
+    case steel = "Steel", brass = "Brass"
     var id: String { rawValue }
     var isSheet: Bool { self == .plywood || self == .mdf }
+    var isHardware: Bool { self == .steel || self == .brass }
+    /// Materials a board can be made from (excludes hardware metals).
+    static var woods: [Species] { allCases.filter { !$0.isHardware } }
+    /// Tangential (flat-sawn) movement per 1% change in moisture content, in/in.
+    var movementPerPercentMC: Double {
+        switch self {
+        case .oak: return 0.00287
+        case .maple: return 0.00330
+        case .cherry: return 0.00237
+        case .walnut: return 0.00260
+        case .pine: return 0.00203
+        case .poplar: return 0.00273
+        default: return 0
+        }
+    }
     var base: NSColor {
         switch self {
         case .oak: return NSColor(deviceRed: 0.78, green: 0.60, blue: 0.38, alpha: 1)
@@ -20,6 +36,8 @@ enum Species: String, Codable, CaseIterable, Identifiable {
         case .poplar: return NSColor(deviceRed: 0.80, green: 0.78, blue: 0.60, alpha: 1)
         case .plywood: return NSColor(deviceRed: 0.86, green: 0.72, blue: 0.50, alpha: 1)
         case .mdf: return NSColor(deviceRed: 0.67, green: 0.55, blue: 0.40, alpha: 1)
+        case .steel: return NSColor(deviceRed: 0.62, green: 0.64, blue: 0.67, alpha: 1)
+        case .brass: return NSColor(deviceRed: 0.80, green: 0.64, blue: 0.25, alpha: 1)
         }
     }
 }
@@ -31,6 +49,7 @@ struct Stock: Identifiable, Hashable {
     let width: Double
     let length: Double
     var sheet = false
+    var hardware: Species? = nil
     var id: String { name }
 
     static let all: [Stock] = [
@@ -50,12 +69,40 @@ struct Stock: Identifiable, Hashable {
         Stock(name: "Plywood 3/4 (4x8)", thickness: 0.75, width: 48, length: 96, sheet: true),
         Stock(name: "Plywood 1/2 (4x8)", thickness: 0.5, width: 48, length: 96, sheet: true),
         Stock(name: "Plywood 1/4 (4x8)", thickness: 0.25, width: 48, length: 96, sheet: true),
+        Stock(name: "Hinge 3in butt", thickness: 0.09, width: 0.75, length: 3, hardware: .brass),
+        Stock(name: "Drawer slide 18in", thickness: 0.5, width: 1.75, length: 18, hardware: .steel),
+        Stock(name: "Bar pull 4in", thickness: 0.5, width: 0.75, length: 4, hardware: .steel),
+        Stock(name: "Knob 1-1/4in", thickness: 1.25, width: 1.25, length: 1.25, hardware: .brass),
+        Stock(name: "Corner brace 3in", thickness: 0.1, width: 0.75, length: 3, hardware: .steel),
+        Stock(name: "Screw #8 x 1-1/4", thickness: 0.164, width: 0.164, length: 1.25, hardware: .steel),
+        Stock(name: "Shelf pin", thickness: 0.2, width: 0.2, length: 0.75, hardware: .steel),
     ]
 }
 
 // MARK: - Parts
 
+/// A half-space boundary in board-local space. Material is kept where n·(x−p) ≤ 0 (n is a unit outward normal).
+struct Plane: Codable, Equatable {
+    var p: SIMD3<Double>
+    var n: SIMD3<Double>
+}
+
+/// Chamfer, roundover or arch along an edge, built from tangent clip planes.
+struct EdgeProfile: Codable, Identifiable, Equatable {
+    enum Kind: String, Codable { case chamfer, roundover, arch }
+    var id = UUID()
+    var kind: Kind
+    var axis1: Int
+    var pos1: Bool
+    /// Second face of the edge; for an arch this is the run axis (pos2 unused).
+    var axis2: Int
+    var pos2: Bool
+    /// Chamfer leg, roundover radius, or arch rise.
+    var size: Double
+}
+
 /// A rectangular void removed from a part. Coordinates are relative to the part's min corner.
+/// When `planes` is set the void is the box intersected with those half-spaces (angled pocket-hole bores).
 struct Cut: Codable, Identifiable, Equatable {
     var id = UUID()
     var kind: String
@@ -70,6 +117,7 @@ struct Cut: Codable, Identifiable, Equatable {
     var offsetFromFar: Bool? = nil
     var mateID: UUID? = nil
     var name: String? = nil
+    var planes: [Plane]? = nil
     /// Tenons add material (and may extend outside the board's box); everything else removes it.
     var additive: Bool { kind == "Tenon" }
 }
@@ -115,6 +163,7 @@ struct Part: Codable, Identifiable, Equatable {
     var shopNumber: Int? = nil
     var toolAssignments: [String:UUID]? = nil
     var shop: PartShopData? = nil
+    var edges: [EdgeProfile]? = nil
 
     var materialAxes: (t: Int, w: Int, l: Int) {
         let t = thicknessAxis ?? (0..<3).min { size[$0] < size[$1] }!
@@ -136,7 +185,7 @@ struct Part: Codable, Identifiable, Equatable {
 }
 
 extension Part {
-    enum CodingKeys: String, CodingKey { case id, name, origin, size, species, cuts, rot, trims, thicknessAxis, grainDirection, group, hidden, resizeJoinery, profile, operations, mesh, component, hardware, allowNestingRotation, bindings, cncTopPositive, patterns, featureOrder, shopNumber, toolAssignments, shop }
+    enum CodingKeys: String, CodingKey { case id, name, origin, size, species, cuts, rot, trims, thicknessAxis, grainDirection, group, hidden, resizeJoinery, profile, operations, mesh, component, hardware, allowNestingRotation, bindings, cncTopPositive, patterns, featureOrder, shopNumber, toolAssignments, shop, edges }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -166,6 +215,7 @@ extension Part {
         shopNumber = try c.decodeIfPresent(Int.self, forKey: .shopNumber)
         toolAssignments = try c.decodeIfPresent([String:UUID].self, forKey: .toolAssignments)
         shop = try c.decodeIfPresent(PartShopData.self,forKey:.shop)
+        edges = try c.decodeIfPresent([EdgeProfile].self, forKey: .edges)
     }
 
     var rotMatrix: simd_double3x3 {
@@ -211,6 +261,56 @@ extension Part {
         }
     }
 
+    /// Clip planes from chamfers, roundovers and arches.
+    var edgePlanes: [(p: SIMD3<Double>, n: SIMD3<Double>)] {
+        var out: [(p: SIMD3<Double>, n: SIMD3<Double>)] = []
+        for e in edges ?? [] {
+            func unit(_ axis: Int, _ pos: Bool) -> SIMD3<Double> { var v = SIMD3<Double>.zero; v[axis] = pos ? 1 : -1; return v }
+            switch e.kind {
+            case .chamfer, .roundover:
+                guard e.axis1 != e.axis2 else { continue }
+                let e1 = unit(e.axis1, e.pos1), e2 = unit(e.axis2, e.pos2)
+                var corner = SIMD3<Double>.zero
+                for (ax, pos) in [(e.axis1, e.pos1), (e.axis2, e.pos2)] { corner[ax] = pos ? size[ax] : 0 }
+                corner[3 - e.axis1 - e.axis2] = size[3 - e.axis1 - e.axis2] / 2
+                if e.kind == .chamfer {
+                    out.append((corner - e1 * e.size, simdNormalize(e1 + e2)))
+                } else {
+                    let c = corner - (e1 + e2) * e.size
+                    let n = e.size > 1 ? 8 : 6
+                    for k in 0..<n {
+                        let phi = (Double(k) + 0.5) * (.pi / 2) / Double(n)
+                        let nn = e1 * cos(phi) + e2 * sin(phi)
+                        out.append((c + nn * e.size, nn))
+                    }
+                }
+            case .arch:
+                let a = e.axis1, r = e.axis2
+                guard a != r else { continue }
+                let w = size[r], h = min(e.size, w / 2)
+                guard h > 1e-6 else { continue }
+                let radius = (h * h + (w / 2) * (w / 2)) / (2 * h)
+                var ea = SIMD3<Double>.zero, er = SIMD3<Double>.zero
+                ea[a] = e.pos1 ? 1 : -1; er[r] = 1
+                var c = SIMD3<Double>.zero
+                c[r] = w / 2
+                c[a] = (e.pos1 ? size[a] : 0) - ea[a] * radius
+                c[3 - a - r] = size[3 - a - r] / 2
+                let phiMax = asin(min(1, (w / 2) / radius))
+                let n = 16
+                for k in 0..<n {
+                    let phi = -phiMax + (Double(k) + 0.5) * 2 * phiMax / Double(n)
+                    let nn = ea * cos(phi) + er * sin(phi)
+                    out.append((c + nn * radius, nn))
+                }
+            }
+        }
+        return out
+    }
+    var hasEdgeProfiles: Bool { !(edges ?? []).isEmpty }
+    /// Miters/bevels plus edge profiles: everything that clips the outside of the blank.
+    var clipPlanes: [(p: SIMD3<Double>, n: SIMD3<Double>)] { trimPlanes + edgePlanes }
+
     mutating func adjustJoinery(from old: Part) {
         if resizeJoinery == true {
             for i in (operations ?? []).indices {
@@ -226,9 +326,11 @@ extension Part {
                 if resizeJoinery == true {
                     cuts[j].lo[axis] *= size[axis] / old.size[axis]
                     cuts[j].hi[axis] *= size[axis] / old.size[axis]
+                    if cuts[j].planes != nil { for k in cuts[j].planes!.indices { cuts[j].planes![k].p[axis] *= size[axis] / old.size[axis] } }
                 } else if cuts[j].faceAxis == axis && cuts[j].facePositive == true {
                     let delta = size[axis] - old.size[axis]
                     cuts[j].lo[axis] += delta; cuts[j].hi[axis] += delta
+                    if cuts[j].planes != nil { for k in cuts[j].planes!.indices { cuts[j].planes![k].p[axis] += delta } }
                 }
             }
         }
@@ -302,6 +404,22 @@ extension Part {
                 }
                 n.relief = relief
             }
+            n.planes = c.planes?.map { pl in
+                func m(_ v: SIMD3<Double>, point: Bool) -> SIMD3<Double> {
+                    var r = v
+                    r[a] = point ? sb - v[b] : -v[b]
+                    r[b] = v[a]
+                    return r
+                }
+                return Plane(p: m(pl.p, point: true), n: m(pl.n, point: false))
+            }
+            return n
+        }
+        q.edges = edges?.map { e in
+            var n = e
+            n.axis1 = remap(e.axis1); n.axis2 = remap(e.axis2)
+            if e.axis1 == b { n.pos1.toggle() }
+            if e.axis2 == b, e.kind != .arch { n.pos2.toggle() }
             return n
         }
         q.trims = trims.map { t in
@@ -673,11 +791,12 @@ final class Document: ObservableObject {
         }) { recordHistory("Add " + p.name) }
     }
     func addStock() {
-        let sp: Species = stock.sheet && !species.isSheet ? .plywood : species
+        let sp: Species = stock.hardware ?? (stock.sheet && !species.isSheet ? .plywood : species)
         let z = (parts.map { $0.bounds.hi.z }.max() ?? -2) + 2
         var p = Part(name: nextName(stock.name), origin: SIMD3(0, 0, z),
-                     size: SIMD3(stockLength, stock.thickness, stock.width), species: sp)
+                     size: SIMD3(stock.hardware != nil ? stock.length : stockLength, stock.thickness, stock.width), species: sp)
         p.thicknessAxis = 1; p.grainDirection = 0
+        if stock.hardware != nil { p.hardware = true }
         add(p)
     }
     func deleteSelected() {
@@ -843,6 +962,7 @@ final class Document: ObservableObject {
         diskFingerprint = ProjectStorage.fingerprint(data)
         fileURL = url; fileName = url.deletingPathExtension().lastPathComponent
         savedProject = project; recoveredUnsaved = false; clearRecovery()
+        Recents.add(url)
         status = "Saved \(url.lastPathComponent)"
     }
     var canRestorePreviousSave: Bool { fileURL.map { FileManager.default.fileExists(atPath:ProjectStorage.previousURL($0).path) } ?? false }
@@ -874,6 +994,7 @@ final class Document: ObservableObject {
             restore(loaded); selection = nil; selectedFace = nil;cncPartIDs = nil
             fileURL = url; diskFingerprint = ProjectStorage.fingerprint(data); fileName = url.deletingPathExtension().lastPathComponent
             savedProject = project; recoveredUnsaved = false; undoStack = []; redoStack = []; clearRecovery()
+            Recents.add(url)
             status = "Opened \(url.lastPathComponent)"
         } catch { status = "Open failed: \(error.localizedDescription)" }
     }

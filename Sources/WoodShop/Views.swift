@@ -154,6 +154,7 @@ struct Inspector: View {
                                 PartSection(doc:doc,part:p).id(p.id)
                                 DisclosureGroup("Outline & curves") { ProfileSection(doc:doc,part:p) }
                                 DisclosureGroup("Material & resizing") { MaterialIntentSection(doc:doc,part:p) }
+                                if p.hardware != true { DisclosureGroup("Wood movement") { MovementSection(doc:doc,part:p) } }
                                 DisclosureGroup("Linked dimensions") { RelationshipSection(doc:doc,part:p) }
                             }
                         case .machining:
@@ -165,9 +166,11 @@ struct Inspector: View {
                                 Text("Selected face: \(face.label)").font(.headline)
                                 JoinerySection(doc:doc,part:p,face:face).id("\(p.id)-\(face.axis)-\(face.positive)")
                                 DisclosureGroup("Miter or bevel") { TrimSection(doc:doc,part:p,face:face) }
+                                if p.hardware != true { DisclosureGroup("Pocket holes & edge profiles") { EdgeAndPocketSection(doc:doc,part:p,face:face) } }
                             } else { Text("Select a flat face in the model to add a pocket, dado, or tenon.").font(.callout).foregroundStyle(.secondary) }
                             if !p.cuts.isEmpty { DisclosureGroup("Existing joinery") { JoineryEditor(doc:doc,part:p) } }
                             if !p.trims.isEmpty { DisclosureGroup("Existing miters & bevels") { TrimEditor(doc:doc,part:p) } }
+                            if p.hasEdgeProfiles { DisclosureGroup("Existing edge profiles") { ExistingEdges(doc:doc,part:p) } }
                         case .history:CompactFeatureHistory(doc:doc,part:p)
                         }
                     } else {
@@ -238,7 +241,7 @@ struct PartSection: View {
                 TextField("Part name",text:$name).textFieldStyle(.roundedBorder).focused($nameFocused).onSubmit(commitName).accessibilityLabel("Part name")
                     .onExitCommand { name = doc.part(part.id)?.name ?? part.name;nameFocused = false }
             }
-            Picker("Material",selection:Binding(get:{doc.part(part.id)?.species ?? .oak},set:{ value in doc.edit(part.id) { $0.species = value } })) { ForEach(Species.allCases) { Text($0.rawValue).tag($0) } }
+            Picker("Material",selection:Binding(get:{doc.part(part.id)?.species ?? .oak},set:{ value in doc.edit(part.id) { $0.species = value } })) { ForEach(Species.allCases.filter { !$0.isHardware || $0 == part.species }) { Text($0.rawValue).tag($0) } }
             GroupBox("Dimensions") {
                 VStack(alignment:.leading,spacing:10) {
                     DimField(label:sizeLabel(0),value:bind(\.size.x,min:1/32),metric:doc.metric,minimum:1/32).disabled(driven(.size,0))

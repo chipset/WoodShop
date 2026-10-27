@@ -7,12 +7,12 @@ enum MakeSection: String,CaseIterable {
 }
 
 enum MakeRoute: String,CaseIterable,Identifiable {
-    case prepare,sheets,review,export,cutList,materials,offcuts,hardware,assemblyChecks,relationships,labels,documents
+    case prepare,sheets,review,export,cutList,materials,buyList,offcuts,hardware,assemblyChecks,relationships,labels,documents
     var id: String { rawValue }
     var section: MakeSection {
         switch self {
         case .prepare,.sheets,.review,.export:return .cnc
-        case .cutList,.materials,.offcuts,.hardware:return .materials
+        case .cutList,.materials,.buyList,.offcuts,.hardware:return .materials
         case .assemblyChecks,.relationships,.labels:return .assembly
         case .documents:return .project
         }
@@ -25,6 +25,7 @@ enum MakeRoute: String,CaseIterable,Identifiable {
         case .export:return "Export to VCarve"
         case .cutList:return "Cut list"
         case .materials:return "Materials & cost"
+        case .buyList:return "Buy list"
         case .offcuts:return "Offcuts"
         case .hardware:return "Hardware"
         case .assemblyChecks:return "Assembly checks"
@@ -41,6 +42,7 @@ enum MakeRoute: String,CaseIterable,Identifiable {
         case .export:return "arrow.up.forward.app"
         case .cutList:return "list.bullet.rectangle"
         case .materials:return "square.stack.3d.up"
+        case .buyList:return "cart"
         case .offcuts:return "square.grid.2x2"
         case .hardware:return "screwdriver"
         case .relationships:return "point.3.connected.trianglepath.dotted"
@@ -65,6 +67,7 @@ enum MakeRoute: String,CaseIterable,Identifiable {
         case .relationships:return .relationships
         case .hardware:return .hardware
         case .materials:return .materials
+        case .buyList:return .buy
         case .offcuts:return .sheets
         case .documents:return .delivery
         default:return nil
@@ -77,6 +80,7 @@ enum MakeRoute: String,CaseIterable,Identifiable {
             case .relationships:return .relationships
             case .hardware:return .hardware
             case .materials:return .materials
+            case .buy:return .buyList
             case .sheets:return .offcuts
             case .delivery:return .documents
             }

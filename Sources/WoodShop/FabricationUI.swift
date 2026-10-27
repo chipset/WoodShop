@@ -152,6 +152,7 @@ struct CutListView: View {
         case .materials:ShopMaterialsPanel(doc:doc)
         case .sheets:SheetInventoryPanel(doc:doc)
         case .delivery:ShopDeliveryPanel(doc:doc)
+        case .buy:BuyListView(doc:doc)
         }
     }
     private func cutList(_ rows: [CutRow]) -> some View {

@@ -32,7 +32,7 @@ enum WoodTexture {
 
         let lines: Int
         switch s {
-        case .mdf: lines = 0
+        case .mdf, .steel, .brass: lines = 0
         case .plywood: lines = 70
         case .pine: lines = 100
         default: lines = 150

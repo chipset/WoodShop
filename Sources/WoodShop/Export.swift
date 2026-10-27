@@ -128,7 +128,7 @@ enum Flatten {
         var blank = part
         blank.cuts = []; blank.operations = nil; blank.patterns = nil; blank.featureOrder = nil
         let blankContours: [[SIMD2<Double>]]
-        if let profile = part.profile, part.trims.isEmpty, profile.thickness == t {
+        if let profile = part.profile, part.trims.isEmpty, !part.hasEdgeProfiles, profile.thickness == t {
             let points = profile.contour(size: part.size).map { profile.local($0, depth: 0, size: part.size) }
                 .map { SIMD2($0[l], $0[w]) }
             blankContours = [Planar.signedArea(points) < 0 ? Array(points.reversed()) : points]
@@ -144,7 +144,7 @@ enum Flatten {
             let rect = (lo: SIMD2(max(c.lo[l], c.additive ? -1e9 : 0), max(c.lo[w], c.additive ? -1e9 : 0)),
                         hi: SIMD2(min(c.hi[l], c.additive ? 1e9 : part.size[l]), min(c.hi[w], c.additive ? 1e9 : part.size[w])))
             if c.additive {
-                let projected = Planar.hull(Geo.polys(boxes: [Box(lo: c.lo, hi: c.hi)], planes: part.trimPlanes)
+                let projected = Planar.hull(Geo.polys(boxes: [Box(lo: c.lo, hi: c.hi)], planes: part.clipPlanes)
                     .flatMap { $0.pts }.map { SIMD2($0[l], $0[w]) })
                 guard projected.count >= 3 else { continue }
                 let lo = projected.reduce(projected[0]) { SIMD2(min($0.x, $1.x), min($0.y, $1.y)) }
@@ -156,11 +156,17 @@ enum Flatten {
             let normal = c.faceAxis ?? t
             let side: Feature.Side = normal != t ? .edge : (c.hi[t] >= part.size[t] - eps ? .top : (c.lo[t] <= eps ? .bottom : .edge))
             let depthAxis = side == .edge ? (c.faceAxis ?? t) : t
-            let shape: [SIMD2<Double>]? = (c.relief != nil || c.allowance != nil) ? c.machiningContour(part: part).map { pt in
+            var shape: [SIMD2<Double>]? = (c.relief != nil || c.allowance != nil) ? c.machiningContour(part: part).map { pt in
                 let a = c.faceAxis ?? t
                 var point = SIMD3<Double>.zero; point[(a + 1) % 3] = pt.x; point[(a + 2) % 3] = pt.y
                 return SIMD2(point[l], point[w])
             } : nil
+            if let planes = c.planes {
+                // An angled bore leaves an elliptical opening: use the hull of the clipped tool, limited to the board.
+                let hull = Planar.hull(Geo.polys(boxes: [Box(lo: c.lo, hi: c.hi)], planes: planes.map { ($0.p, $0.n) })
+                    .flatMap { $0.pts }.map { SIMD2(min(max($0[l], 0), part.size[l]), min(max($0[w], 0), part.size[w])) })
+                if hull.count >= 3 { shape = hull }
+            }
             features.append(Feature(kind: c.kind, side: side, depth: min(c.hi[depthAxis], part.size[depthAxis]) - max(c.lo[depthAxis], 0), rect: rect, polygon: shape, reference:FeatureRef(part:part.id,kind:.cut,feature:c.id)))
         }
         for op in part.machiningOperations where op.suppressed != true {
@@ -184,6 +190,8 @@ enum Flatten {
             if profile.thickness != t { notes.append("The curve is on an edge of the stock; it requires a separate machining setup.") }
         }
         if !part.trims.isEmpty { notes.append("Angled cuts: outline is the full projected blank; bevels require a separate setup.") }
+        if part.hasEdgeProfiles { notes.append("Chamfers, roundovers and arches: the outline is the full projected blank; machine the profile in a separate setup.") }
+        if part.cuts.contains(where: { $0.planes != nil && $0.suppressed != true }) { notes.append("Angled bores (pocket holes) are drilled with a jig; the layer shows the opening.") }
         if !tenons.isEmpty { notes.append("Tenons are merged into OUTLINE; TENON marks their shoulder regions. Reduced-thickness tenons require shoulder machining.") }
         if features.contains(where: { $0.side == .bottom }) { notes.append("Some pockets are on the bottom face (flip the stock).") }
         if features.contains(where: { $0.side == .edge }) { notes.append("Some cuts are on an edge/end face and need a separate setup.") }
