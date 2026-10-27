@@ -62,7 +62,8 @@ final class FaceSketchTests: XCTestCase {
             let d = document(),p = board();d.add(p)
             var s = seed();s.shape = .rectangle;s.size = SIMD2(2,3);s.depth = 0.25
             _ = try apply(s,to:d,part:p,positive:positive)
-            XCTAssertEqual(volume(d.part(p.id)!),20*12*0.75-2*3*0.25,accuracy:1e-6)
+            let expected: Double = 20.0*12.0*0.75 - 2.0*3.0*0.25
+            XCTAssertEqual(volume(d.part(p.id)!),expected,accuracy:1e-6)
         }
     }
     func testSketchOnEveryOuterFaceAndRotatedPart() throws {
@@ -84,7 +85,8 @@ final class FaceSketchTests: XCTestCase {
         XCTAssertEqual(d.part(p.id)?.operations?[0].depth,1.25)
         XCTAssertEqual(d.part(p.id)?.operations?[0].sketch,s)
         XCTAssertEqual(d.part(p.id)?.operations?[0].id,id)
-        XCTAssertEqual(volume(d.part(p.id)!),20*12*1.25-2*3*1.25,accuracy:1e-6)
+        let expected: Double = 20.0*12.0*1.25 - 2.0*3.0*1.25
+        XCTAssertEqual(volume(d.part(p.id)!),expected,accuracy:1e-6)
     }
     func testFixedAndScalingSketchesBehavePredictablyOnResize() throws {
         for scale in [false,true] {
