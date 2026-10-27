@@ -44,8 +44,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ZIP="WoodShop-${VERSION}-macOS.zip"
+          # Hand-written notes live in docs/release-notes/<tag>.md; otherwise GitHub generates them.
+          NOTES="docs/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES" ]; then
+            echo "Using $NOTES"
+            NOTES_ARGS=(--notes-file "$NOTES")
+          else
+            echo "No $NOTES; generating notes"
+            NOTES_ARGS=(--generate-notes)
+          fi
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber
+            [ -f "$NOTES" ] && gh release edit "$GITHUB_REF_NAME" "${NOTES_ARGS[@]}"
           else
-            gh release create "$GITHUB_REF_NAME" "$ZIP" --title "WoodShop ${VERSION}" --generate-notes
+            gh release create "$GITHUB_REF_NAME" "$ZIP" --title "WoodShop ${VERSION}" "${NOTES_ARGS[@]}"
           fi
+          exit 0

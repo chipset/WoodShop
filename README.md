@@ -78,7 +78,7 @@ git tag -a v0.16.0 -m "WoodShop 0.16.0"
 git push origin v0.16.0
 ```
 
-The Release workflow runs the tests, builds the app with that version number, and attaches `WoodShop-0.16.0-macOS.zip` to a new GitHub release. Running the workflow by hand from the Actions tab does a dry run that only uploads the zip as a downloadable artifact.
+Before tagging, write the notes in `docs/release-notes/v0.16.0.md` (see the earlier files there for the format); the workflow uses that file as the release description, or lets GitHub generate notes if it is missing. The Release workflow runs the tests, builds the app with that version number, and attaches `WoodShop-0.16.0-macOS.zip` to a new GitHub release. Running the workflow by hand from the Actions tab does a dry run that only uploads the zip as a downloadable artifact.
 
 ## Project layout
 
