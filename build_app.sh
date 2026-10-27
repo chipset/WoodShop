@@ -24,8 +24,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundleExecutable</key><string>WoodShop</string>
 <key>CFBundleIdentifier</key><string>com.local.woodshop</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.15</string>
-<key>CFBundleVersion</key><string>15</string>
+<key>CFBundleShortVersionString</key><string>0.16</string>
+<key>CFBundleVersion</key><string>16</string>
 <key>CFBundleDocumentTypes</key><array><dict>
 <key>CFBundleTypeName</key><string>WoodShop Project</string>
 <key>CFBundleTypeRole</key><string>Editor</string>

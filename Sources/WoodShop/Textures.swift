@@ -11,12 +11,23 @@ struct LCG: RandomNumberGenerator {
 /// Procedural, tileable wood-grain textures; grain runs along the horizontal (u) axis.
 enum WoodTexture {
     private static var cache: [Species: NSImage] = [:]
+    private static let lock = NSLock()
 
     static func image(for s: Species) -> NSImage {
-        if let c = cache[s] { return c }
+        lock.lock()
+        let cached = cache[s]
+        lock.unlock()
+        if let cached { return cached }
         let img = make(s)
+        lock.lock()
+        if let cached = cache[s] { lock.unlock(); return cached }
         cache[s] = img
+        lock.unlock()
         return img
+    }
+
+    static func prewarm(_ species: Set<Species>) {
+        for material in species { _ = image(for:material) }
     }
 
     private static func make(_ s: Species) -> NSImage {

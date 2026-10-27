@@ -221,14 +221,22 @@ final class CNCWorkflowTests: XCTestCase {
     }
     func testDoubleClickThroughHoleSelectsItsPatternIn3D() throws {
         _ = NSApplication.shared
-        let d = document(); var p = board(),recipe = pattern(); recipe.through = true; p.patterns = [recipe]; d.add(p); d.tool = .select
-        let ctrl = SceneController(doc:d); ctrl.target = p.center; ctrl.distance = 35; ctrl.updateCamera()
-        let view = ModelView(frame:CGRect(x:0,y:0,width:1000,height:800)); view.doc = d; view.ctrl = ctrl; view.scene = ctrl.scene; view.pointOfView = ctrl.cameraNode
-        view.connectActions(); RunLoop.main.run(until:Date().addingTimeInterval(0.04))
-        let local = SIMD3<Double>(1,p.size.y,1),point = view.projectPoint(vec(p.toWorld(local)))
-        let click = try XCTUnwrap(NSEvent.mouseEvent(with:.leftMouseDown,location:CGPoint(x:CGFloat(point.x),y:CGFloat(point.y)),modifierFlags:[],timestamp:0,windowNumber:0,context:nil,eventNumber:0,clickCount:2,pressure:1))
-        view.mouseDown(with:click)
-        XCTAssertEqual(d.selectedFeature?.feature,recipe.id); XCTAssertTrue(d.showFeatureEditor)
+        for large in [false,true] {
+            let d = document(); var p = board(),recipe = pattern(); recipe.through = true; p.patterns = [recipe]; d.add(p); d.tool = .select
+            if large {
+                d.parts += (0..<200).map { i in Part(name:"Distant board \(i)",origin:SIMD3(1000+Double(i)*2,0,0),size:SIMD3(1,0.75,8),species:.plywood) }
+            }
+            let ctrl = SceneController(doc:d); ctrl.target = p.center; ctrl.distance = 35; ctrl.updateCamera()
+            let view = ModelView(frame:CGRect(x:0,y:0,width:1000,height:800)); view.doc = d; view.ctrl = ctrl; view.scene = ctrl.scene; view.pointOfView = ctrl.cameraNode
+            view.connectActions(); RunLoop.main.run(until:Date().addingTimeInterval(0.04))
+            let deadline = Date().addingTimeInterval(5)
+            while ctrl.loadingProgress != nil && Date() < deadline { RunLoop.main.run(until:Date().addingTimeInterval(0.01)) }
+            XCTAssertNil(ctrl.loadingProgress)
+            let local = SIMD3<Double>(1,p.size.y,1),point = view.projectPoint(vec(p.toWorld(local)))
+            let click = try XCTUnwrap(NSEvent.mouseEvent(with:.leftMouseDown,location:CGPoint(x:CGFloat(point.x),y:CGFloat(point.y)),modifierFlags:[],timestamp:0,windowNumber:0,context:nil,eventNumber:0,clickCount:2,pressure:1))
+            view.mouseDown(with:click)
+            XCTAssertEqual(d.selectedFeature?.feature,recipe.id); XCTAssertTrue(d.showFeatureEditor)
+        }
     }
 
 }

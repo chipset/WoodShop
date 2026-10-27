@@ -403,6 +403,23 @@ private struct UndoRecord {
     var face: FaceRef?
 }
 
+private struct DirtyCacheKey: Equatable {
+    var parts: UInt64
+    var studio: UInt64
+    var links: UInt64
+    var saved: UInt64
+    var metric: Bool
+    var snap: Double
+    var species: Species
+    var stockName: String
+    var stockLength: Double
+    var rectThickness: Double
+    var sheetLength: Double
+    var sheetWidth: Double
+    var nestGap: Double
+    var recovered: Bool
+}
+
 final class Document: ObservableObject {
     let workspaceStore: WorkspacePreferencesStore?
     @Published var showEditableDimensions = true
@@ -436,7 +453,8 @@ final class Document: ObservableObject {
     @Published var showReviewHighlights = false
     @Published var setupProfiles: [CNCSetupProfile] = []
     let setupProfileStore: SetupProfileStore
-    @Published var studio = StudioState()
+    @Published var studio = StudioState() { didSet { studioRevision &+= 1 } }
+    private var studioRevision: UInt64 = 0
     @Published var workshopTab = 0
     @Published var showWorkshop = false
     @Published var showDesign = false
@@ -461,7 +479,11 @@ final class Document: ObservableObject {
     }
     @Published var stockLength: Double = 48
     @Published var rectThickness: Double = 0.75
-    @Published var status = Tool.select.hint
+    let statusState = StatusState()
+    var status: String {
+        get { statusState.value }
+        set { if statusState.value != newValue { statusState.value = newValue } }
+    }
     @Published var axisLock: Int?
     @Published var showCutList = false
     @Published var fabricationTab = 0 { didSet { makeArea = .fabrication } }
@@ -470,10 +492,12 @@ final class Document: ObservableObject {
     @Published var sheetLength: Double = 96
     @Published var sheetWidth: Double = 48
     @Published var nestGap: Double = 0.5
-    @Published var links: [DimensionLink] = []
+    @Published var links: [DimensionLink] = [] { didSet { linksRevision &+= 1 } }
+    private var linksRevision: UInt64 = 0
     @Published var isolateSelection = false
     @Published var editRevision = 0
-    @Published var savedProject = Project()
+    @Published var savedProject = Project() { didSet { savedRevision &+= 1 } }
+    private var savedRevision: UInt64 = 0
     @Published private var recoveredUnsaved = false
     @Published var exactDistance = ""
     @Published var activeDrag = false
@@ -490,6 +514,8 @@ final class Document: ObservableObject {
     private var counter = 0
     private var recoveryTimer: Timer?
     private var lastRecovery: Project?
+    private var dirtyCacheKey: DirtyCacheKey?
+    private var dirtyCacheValue = false
     private let recoveryLocation: URL?
 
     init(startRecoveryTimer: Bool = true, recoveryLocation: URL? = nil, setupStoreURL: URL? = nil, workspaceStore: WorkspacePreferencesStore? = nil,hardwareStoreURL: URL? = nil) {
@@ -521,10 +547,16 @@ final class Document: ObservableObject {
                 sheetWidth: sheetWidth, nestGap: nestGap, links: links, studio: studio)
     }
     var isDirty: Bool {
+        let key = DirtyCacheKey(parts:partsRevision,studio:studioRevision,links:linksRevision,saved:savedRevision,
+            metric:metric,snap:snap,species:species,stockName:stock.name,stockLength:stockLength,
+            rectThickness:rectThickness,sheetLength:sheetLength,sheetWidth:sheetWidth,nestGap:nestGap,recovered:recoveredUnsaved)
+        if key == dirtyCacheKey { return dirtyCacheValue }
         var current = project, saved = savedProject
         current.studio?.history = nil; saved.studio?.history = nil
         current.studio?.nextShopNumber = nil; saved.studio?.nextShopNumber = nil
-        return recoveredUnsaved || current != saved
+        dirtyCacheValue = recoveredUnsaved || current != saved
+        dirtyCacheKey = key
+        return dirtyCacheValue
     }
     func restore(_ original: Project) {
         let p = ShopIdentity.numbered(original)
@@ -595,25 +627,39 @@ final class Document: ObservableObject {
         let original = parts
         do {
             guard Set(replacements.map(\.id)).count == replacements.count else { throw ModelValidation.Failure(message:"An edit contains the same part twice.") }
+            var staged = original
             for next in replacements {
-                guard let i = parts.firstIndex(where: { $0.id == next.id }) else { throw ModelValidation.Failure(message:"The edited part no longer exists.") }
-                parts[i] = next
+                guard let i = staged.firstIndex(where: { $0.id == next.id }) else { throw ModelValidation.Failure(message:"The edited part no longer exists.") }
+                staged[i] = next
                 if let component = next.component {
-                    for j in parts.indices where j != i && parts[j].component == component && !replacements.contains(where: { $0.id == parts[j].id }) {
-                        let instance = parts[j]
-                        parts[j] = next
-                        parts[j].id = instance.id; parts[j].shopNumber = instance.shopNumber; parts[j].name = instance.name; parts[j].origin = instance.origin
-                        parts[j].rot = instance.rot; parts[j].bindings = instance.bindings; parts[j].group = instance.group; parts[j].hidden = instance.hidden
+                    for j in staged.indices where j != i && staged[j].component == component && !replacements.contains(where: { $0.id == staged[j].id }) {
+                        let instance = staged[j]
+                        staged[j] = next
+                        staged[j].id = instance.id; staged[j].shopNumber = instance.shopNumber; staged[j].name = instance.name; staged[j].origin = instance.origin
+                        staged[j].rot = instance.rot; staged[j].bindings = instance.bindings; staged[j].group = instance.group; staged[j].hidden = instance.hidden
                     }
                 }
             }
-            try Regeneration.rebuild(parts:&parts,links:links,studio:studio)
-            try ModelValidation.validate(project)
-            if let face = selectedFace,let before = original.first(where: { $0.id == face.part }),let after = part(face.part),before.profile != after.profile || before.mesh != after.mesh { selectedFace = nil }
-            if parts != original { selectedSurface = nil; editRevision += 1 }
+            let pureMove = zip(original,staged).allSatisfy { before, after in
+                var moved = after; moved.origin = before.origin
+                return moved == before
+            }
+            if pureMove && (studio.relations ?? []).isEmpty && (studio.matingJoints ?? []).isEmpty {
+                let values = try Parametric.values(studio.parameters ?? [])
+                for (before,after) in zip(original,staged) where before.origin != after.origin {
+                    guard ModelValidation.finite(after.origin) else { throw ModelValidation.Failure(message:after.name+": position must be finite.") }
+                    try Parametric.validateBindings(after,values:values)
+                }
+            } else {
+                try Regeneration.rebuild(parts:&staged,links:links,studio:studio)
+                var candidate = project; candidate.parts = staged
+                try ModelValidation.validate(candidate)
+            }
+            if let face = selectedFace,let before = original.first(where: { $0.id == face.part }),let after = staged.first(where: { $0.id == face.part }),before.profile != after.profile || before.mesh != after.mesh { selectedFace = nil }
+            if staged != original { parts = staged; selectedSurface = nil; editRevision += 1 }
             fixSelection()
             return true
-        } catch { parts = original; status = error.localizedDescription; return false }
+        } catch { status = error.localizedDescription; return false }
     }
     @discardableResult func propagateLinks(from source: UUID) -> Bool {
         do { try Regeneration.rebuild(parts:&parts,links:links,studio:studio); return true }

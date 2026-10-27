@@ -74,6 +74,13 @@ struct WoodShopApp: App {
                 Button("Duplicate") { doc.duplicateSelected() }.keyboardShortcut("d")
                 Button("Zoom to Fit") { Shared.ctrl.zoomExtents() }.keyboardShortcut("0")
                 Button("Cut List…") { doc.openMake(.cutList) }.keyboardShortcut("l")
+                Divider()
+                Button("Toggle Render Statistics") { Shared.ctrl.toggleRenderStatistics() }
+                Button("Copy Performance Summary") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(Shared.ctrl.performanceSummary,forType:.string)
+                    doc.status = "Copied performance summary."
+                }
             }
         }
     }

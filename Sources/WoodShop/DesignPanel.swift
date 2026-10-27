@@ -11,7 +11,7 @@ struct DesignPanel: View {
                 FeatureHistoryEditor(doc: doc).tabItem { Text("Part Features & Expressions") }
                 HistoryTimeline(doc: doc).tabItem { Text("Design History") }
             }
-            HStack { Text(doc.status).font(.callout).foregroundStyle(.secondary).lineLimit(3); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            HStack { StatusMessage(doc:doc).font(.callout).foregroundStyle(.secondary).lineLimit(3); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
         }.padding(20).frame(width: 940, height: 740).background(Color(nsColor: .windowBackgroundColor))
     }
 }

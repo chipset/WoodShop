@@ -16,6 +16,7 @@ struct ContentView: View {
                     SelectionBreadcrumbs(doc:doc)
                     ViewportView(doc:doc,ctrl:ctrl)
                         .overlay { if doc.parts.isEmpty { WelcomePanel(doc:doc,ctrl:ctrl) } }
+                        .overlay { ModelLoadingOverlay(ctrl:ctrl) }
                         .overlay(alignment:.topLeading) { ViewportHUD(doc:doc,ctrl:ctrl) }
                         .overlay { EditableDimensionOverlay(doc:doc,ctrl:ctrl) }
                     Divider()
@@ -70,6 +71,21 @@ struct ContentView: View {
     }
 }
 
+private struct ModelLoadingOverlay: View {
+    @ObservedObject var ctrl: SceneController
+    var body: some View {
+        if let progress = ctrl.loadingProgress {
+            VStack(spacing:8) {
+                ProgressView(value:progress).frame(width:190)
+                Text("Building model…").font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(16)
+            .background(.regularMaterial,in:RoundedRectangle(cornerRadius:12))
+            .allowsHitTesting(false)
+        }
+    }
+}
+
 struct ToolPalette: View {
     @ObservedObject var doc: Document
     var body: some View {
@@ -88,13 +104,29 @@ struct ToolPalette: View {
     }
 }
 
+final class StatusState: ObservableObject {
+    @Published var value = Tool.select.hint
+}
+
+struct StatusMessage: View {
+    let doc: Document
+    var defaultMessage: String? = nil
+    @ObservedObject private var source: StatusState
+    init(doc: Document, defaultMessage: String? = nil) {
+        self.doc = doc; self.defaultMessage = defaultMessage; self.source = doc.statusState
+    }
+    var body: some View {
+        Text(source.value == doc.tool.hint ? (defaultMessage ?? source.value) : source.value).help(source.value)
+    }
+}
+
 struct StatusBar: View {
     @ObservedObject var doc: Document
     var body: some View {
         HStack {
             if doc.historyInspection != nil { Button("Resume full history") { doc.resumeFeatureHistory() } }
             if doc.parameterPreview != nil { Text("Parameter preview").foregroundStyle(.orange); Button("Discard preview") { doc.clearParameterPreview() } }
-            Text(doc.status).lineLimit(1).font(.caption).frame(maxWidth:.infinity,alignment:.leading).layoutPriority(-1).help(doc.status)
+            StatusMessage(doc:doc).lineLimit(1).font(.caption).frame(maxWidth:.infinity,alignment:.leading).layoutPriority(-1)
             Spacer()
             if doc.activeDrag {
                 TextField("Distance", text: $doc.exactDistance)

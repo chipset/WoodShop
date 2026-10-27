@@ -4,6 +4,41 @@ import AppKit
 import simd
 
 final class PartNode {
+    struct PreparedGeometry {
+        var polygons: [Geo.Poly]
+        var features: [FeatureStep:[Geo.Poly]]
+    }
+    static func prepare(_ part: Part) -> PreparedGeometry? {
+        guard plainTemplateKey(part) == nil else { return nil }
+        var features: [FeatureStep:[Geo.Poly]] = [:]
+        for step in part.featureSteps where step.kind != .trim { features[step] = part.toolPolygons(step) }
+        return PreparedGeometry(polygons:Geo.polys(for:part),features:features)
+    }
+    private final class GeometryTemplate: NSObject {
+        let polygons: [Geo.Poly]
+        let body: SCNGeometry
+        let edges: SCNGeometry
+        init(_ part: Part) {
+            polygons = Geo.polys(for:part)
+            body = Geo.geometry(for:part,polygons:polygons)
+            edges = Geo.edgeGeometry(for:part,polygons:polygons)
+        }
+    }
+    private static let templates: NSCache<NSString,GeometryTemplate> = {
+        let cache = NSCache<NSString,GeometryTemplate>()
+        cache.countLimit = 128
+        return cache
+    }()
+    static func plainTemplateKey(_ part: Part) -> NSString? {
+        guard part.cuts.isEmpty,part.trims.isEmpty,part.profile == nil,part.mesh == nil,
+              (part.operations ?? []).isEmpty,(part.patterns ?? []).isEmpty,part.featureOrder == nil else { return nil }
+        return NSString(string:"\(part.size.x.bitPattern):\(part.size.y.bitPattern):\(part.size.z.bitPattern):\(part.grainAxis):\(part.species.rawValue)")
+    }
+    private static func instance(_ template: SCNGeometry) -> SCNGeometry {
+        let geometry = SCNGeometry(sources:template.sources,elements:template.elements)
+        geometry.materials = template.materials.map { $0.copy() as! SCNMaterial }
+        return geometry
+    }
     /// `root` carries the board's centre position and rotation; `body` holds the geometry in board-local coordinates.
     let root = SCNNode()
     let body = SCNNode()
@@ -13,33 +48,36 @@ final class PartNode {
     private(set) var polygons: [Geo.Poly] = []
     private var selected: Bool?
     private var highlightColor: NSColor?
+    private var featureProxiesBuilt: Bool
+    private var preparedFeaturePolygons: [FeatureStep:[Geo.Poly]]?
 
-    init(_ part: Part) {
+    init(_ part: Part, prepared: PreparedGeometry? = nil, eagerFeatureProxies: Bool = true) {
         self.part = part
+        featureProxiesBuilt = eagerFeatureProxies
         body.name = part.id.uuidString
         body.categoryBitMask = SceneController.partMask
         edges.categoryBitMask = 1
         body.addChildNode(edges); body.addChildNode(featureProxies)
         root.addChildNode(body)
-        rebuild()
+        rebuild(prepared:prepared)
         place()
     }
 
-    func rebuild(section: SectionPlane? = nil, through: Int? = nil) {
+    func rebuild(section: SectionPlane? = nil, through: Int? = nil, prepared: PreparedGeometry? = nil) {
         selected = nil
         featureProxies.childNodes.forEach { $0.removeFromParentNode() }
-        let steps = through.map { Array(part.featureSteps.prefix(max(0,$0))) } ?? part.featureSteps
-        if section == nil {
-            for step in steps where step.kind != .trim {
-                let polygons = part.toolPolygons(step)
-                guard !polygons.isEmpty else { continue }
-                let geometry = Geo.geometry(for:part,polygons:polygons)
-                let material = SCNMaterial(); material.colorBufferWriteMask = []; material.writesToDepthBuffer = false; material.isDoubleSided = true
-                geometry.materials = [material]
-                let node = SCNNode(geometry:geometry); node.categoryBitMask = 4; node.name = part.id.uuidString + "|" + step.kind.rawValue + "|" + step.feature.uuidString
-                featureProxies.addChildNode(node)
-            }
+        preparedFeaturePolygons = prepared?.features
+        if section == nil, through == nil, let key = Self.plainTemplateKey(part) {
+            let template: GeometryTemplate
+            if let cached = Self.templates.object(forKey:key) { template = cached }
+            else { template = GeometryTemplate(part); Self.templates.setObject(template,forKey:key) }
+            polygons = template.polygons
+            body.geometry = Self.instance(template.body)
+            edges.geometry = Self.instance(template.edges)
+            return
         }
+        let steps = through.map { Array(part.featureSteps.prefix(max(0,$0))) } ?? part.featureSteps
+        if section == nil && featureProxiesBuilt { buildFeatureProxies(steps) }
         if section != nil || through != nil {
             var polygons = through.map { FeatureReplay.polygons(part,through:$0) } ?? Geo.polys(for:part)
             if let section { polygons = Geo.sectionPolygons(part, section: section, polygons:polygons) }
@@ -53,16 +91,37 @@ final class PartNode {
             let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: vertices)], elements: [SCNGeometryElement(indices: indices, primitiveType: .line)])
             geometry.materials = [Geo.lineMaterial(.black)]; edges.geometry = geometry
         } else {
-            polygons = Geo.polys(for:part)
+            polygons = prepared?.polygons ?? Geo.polys(for:part)
             body.geometry = Geo.geometry(for:part,polygons:polygons)
             edges.geometry = Geo.edgeGeometry(for:part,polygons:polygons)
         }
     }
 
+    func ensureFeatureProxies() {
+        guard !featureProxiesBuilt else { return }
+        featureProxiesBuilt = true
+        buildFeatureProxies(part.featureSteps)
+    }
+
+    private func buildFeatureProxies(_ steps: [FeatureStep]) {
+        for step in steps where step.kind != .trim {
+            let polygons = preparedFeaturePolygons?[step] ?? part.toolPolygons(step)
+            guard !polygons.isEmpty else { continue }
+            let geometry = Geo.geometry(for:part,polygons:polygons)
+            let material = SCNMaterial(); material.colorBufferWriteMask = []; material.writesToDepthBuffer = false; material.isDoubleSided = true
+            geometry.materials = [material]
+            let node = SCNNode(geometry:geometry); node.categoryBitMask = 4; node.name = part.id.uuidString + "|" + step.kind.rawValue + "|" + step.feature.uuidString
+            featureProxies.addChildNode(node)
+        }
+        preparedFeaturePolygons = nil
+    }
+
     func place() {
         root.position = vec(part.center)
-        let q = simd_quatd(part.rotMatrix)
-        root.simdOrientation = simd_quatf(ix: Float(q.imag.x), iy: Float(q.imag.y), iz: Float(q.imag.z), r: Float(q.real))
+        if part.isRotated {
+            let q = simd_quatd(part.rotMatrix)
+            root.simdOrientation = simd_quatf(ix: Float(q.imag.x), iy: Float(q.imag.y), iz: Float(q.imag.z), r: Float(q.real))
+        } else { root.simdOrientation = simd_quatf(ix:0,iy:0,iz:0,r:1) }
         body.position = vec(-part.size / 2)
     }
 
@@ -86,6 +145,15 @@ final class PartNode {
 /// Owns the SceneKit scene: camera, grid, board nodes and tool overlays.
 final class SceneController: ObservableObject {
     @Published private(set) var cameraRevision = 0
+    @Published private(set) var loadingProgress: Double?
+    private(set) var sceneRevision: UInt64 = 0
+    private(set) var lastSceneSyncSeconds = 0.0
+    private(set) var lastSceneLoadSeconds = 0.0
+    private(set) var longestSceneBatchSeconds = 0.0
+    private(set) var longestScenePartSeconds = 0.0
+    private(set) var longestScenePartName = ""
+    private(set) var lastEditCommitSeconds = 0.0
+    private(set) var renderStatisticsVisible = false
     weak var viewport: ModelView?
     static let partMask = 2
 
@@ -93,6 +161,11 @@ final class SceneController: ObservableObject {
     let scene = SCNScene()
     let cameraNode = SCNNode()
     private let partsRoot = SCNNode()
+    private let edgeBatchRoot = SCNNode()
+    private var edgeBatchGroups: [[UUID]] = []
+    private var edgeBatchIndex: [UUID:Int] = [:]
+    private var edgeBatchNodes: [SCNNode] = []
+    var batchedEdgeNodeCount: Int { edgeBatchNodes.count }
     private var selOverlay: SCNNode?
     private var hoverOverlay: SCNNode?
     private let previewNode = SCNNode()
@@ -106,17 +179,23 @@ final class SceneController: ObservableObject {
     private let reviewOverlay = SCNNode()
     private let ghostRoot = SCNNode()
     private var nodes: [UUID: PartNode] = [:]
+    private var previewPartIDs: Set<UUID> = []
+    private var previewMoveIDs: Set<UUID> = []
     private var hover: FaceRef?
     private var snapPoint: SIMD3<Double>?
     private var snapRadius = 0.0
     private var lastSyncedPartsRevision: UInt64 = .max
     private var lastSyncedPreviewRevision: UInt64 = .max
+    private var loadGeneration = 0
     private var styledIDs: Set<UUID> = []
     private var highlightedIDs: Set<UUID> = []
     private var lastSelection: UUID?
     private var lastSelectedFace: FaceRef?
     private var lastSelectedFeature: FeatureRef?
     private var lastTool: Tool?
+    private var gizmoPartID: UUID?
+    private var gizmoCenter = SIMD3<Double>.zero
+    private var gizmoLength = 0.0
     private var lastGuides: [ConstructionGuide] = []
     private var lastDimensions: [ModelDimension] = []
     private var reviewPartsRevision: UInt64 = .max
@@ -137,7 +216,7 @@ final class SceneController: ObservableObject {
     init(doc: Document) {
         self.doc = doc
         scene.background.contents = NSColor(deviceRed: 0.80, green: 0.86, blue: 0.93, alpha: 1)
-        [partsRoot, previewNode, measureNode, gizmoNode, snapNode, constructionNode, featureOverlay, reviewOverlay, ghostRoot].forEach { scene.rootNode.addChildNode($0) }
+        [partsRoot, edgeBatchRoot, previewNode, measureNode, gizmoNode, snapNode, constructionNode, featureOverlay, reviewOverlay, ghostRoot].forEach { scene.rootNode.addChildNode($0) }
         buildLights()
         buildGrid()
         let cam = SCNCamera()
@@ -169,10 +248,10 @@ final class SceneController: ObservableObject {
         doc.$parts.receive(on: RunLoop.main).sink { [weak self] _ in self?.sync() }.store(in: &bag)
         doc.$selectedIDs.receive(on: RunLoop.main).sink { [weak self] _ in
             guard let self else { return }
-            if self.doc.isolateSelection { self.updateVisibility(); self.rebuildHighlights() }
+            if self.doc.isolateSelection { self.updateVisibility(); self.refreshEdgeBatches(); self.rebuildHighlights() }
             self.updateSelection()
         }.store(in: &bag)
-        doc.$isolateSelection.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateVisibility(); self?.rebuildHighlights() }.store(in: &bag)
+        doc.$isolateSelection.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateVisibility(); self?.refreshEdgeBatches(); self?.rebuildHighlights() }.store(in: &bag)
         doc.$tool.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateSelection() }.store(in: &bag)
         doc.$selection.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateSelection() }.store(in: &bag)
         doc.$selectedFace.receive(on: RunLoop.main).sink { [weak self] _ in self?.updateSelection() }.store(in: &bag)
@@ -220,16 +299,72 @@ final class SceneController: ObservableObject {
 
     func polygons(for id: UUID) -> [Geo.Poly] { nodes[id]?.polygons ?? [] }
 
+    func ensureFeatureProxies(for id: UUID) {
+        guard doc.studio.section == nil, doc.historyInspection == nil else { return }
+        nodes[id]?.ensureFeatureProxies()
+    }
+
+    func toggleRenderStatistics() {
+        renderStatisticsVisible.toggle()
+        viewport?.showsStatistics = renderStatisticsVisible
+    }
+
+    func recordEditCommit(_ seconds: Double) { lastEditCommitSeconds = seconds }
+
+    var performanceSummary: String {
+        String(format:"WoodShop performance · %d parts\nScene load: %.3f s\nLongest scene batch: %.3f s\nSlowest part: %@ (%.3f s)\nLast scene sync: %.3f s\nLast edit commit: %.3f s\nRender statistics: %@",
+            doc.parts.count,lastSceneLoadSeconds,longestSceneBatchSeconds,longestScenePartName,longestScenePartSeconds,lastSceneSyncSeconds,lastEditCommitSeconds,renderStatisticsVisible ? "visible in viewport" : "hidden")
+    }
+
+    func previewMove(_ parts: [Part]) {
+        for part in parts {
+            nodes[part.id]?.root.position = vec(part.center)
+            previewMoveIDs.insert(part.id)
+        }
+    }
+
+    func previewPart(_ part: Part) {
+        guard let node = nodes[part.id] else { return }
+        if node.part == part { return }
+        node.part = part
+        node.rebuild(section:doc.studio.section,through:doc.historyInspection?.part == part.id ? doc.historyInspection?.through : nil)
+        node.place()
+        node.setSelected(doc.selectedIDs.contains(part.id))
+        previewPartIDs.insert(part.id)
+    }
+
+    func endEditPreview(committed: Bool) {
+        if !committed {
+            for id in previewPartIDs {
+                guard let part = doc.part(id), let node = nodes[id] else { continue }
+                node.part = part
+                node.rebuild(section:doc.studio.section)
+                node.place()
+                node.setSelected(doc.selectedIDs.contains(id))
+            }
+            for id in previewMoveIDs where !previewPartIDs.contains(id) {
+                if let part = doc.part(id) { nodes[id]?.root.position = vec(part.center) }
+            }
+        }
+        previewPartIDs.removeAll();previewMoveIDs.removeAll()
+    }
+
     // MARK: Model sync
 
     private func sync() {
+        let started = ProcessInfo.processInfo.systemUptime
         let sectionChanged = lastSection != doc.studio.section
         let previousInspection = lastInspection
         let inspectionChanged = previousInspection != doc.historyInspection
         guard sectionChanged || inspectionChanged || lastSyncedPartsRevision != doc.partsRevision || lastSyncedPreviewRevision != doc.previewRevision else { return }
+        if loadingProgress != nil { loadGeneration += 1; loadingProgress = nil }
         lastSyncedPartsRevision = doc.partsRevision; lastSyncedPreviewRevision = doc.previewRevision
         lastSection = doc.studio.section; lastInspection = doc.historyInspection
         let displayedParts = doc.parameterPreview?.parts ?? doc.parts
+        if nodes.isEmpty && displayedParts.count > 200 && doc.parameterPreview == nil && doc.studio.section == nil && doc.historyInspection == nil {
+            loadLargeScene(displayedParts)
+            return
+        }
         let ids = Set(displayedParts.map(\.id))
         for (id, pn) in nodes where !ids.contains(id) {
             pn.root.removeFromParentNode()
@@ -260,16 +395,116 @@ final class SceneController: ObservableObject {
         }
         updateVisibility()
         updateSelection(force: true)
+        rebuildEdgeBatches()
         rebuildHighlights()
+        sceneRevision &+= 1
+        lastSceneSyncSeconds = ProcessInfo.processInfo.systemUptime - started
+    }
+
+    private func loadLargeScene(_ parts: [Part]) {
+        let started = ProcessInfo.processInfo.systemUptime
+        loadGeneration += 1
+        let generation = loadGeneration
+        loadingProgress = 0
+        longestSceneBatchSeconds = 0
+        longestScenePartSeconds = 0; longestScenePartName = ""
+        var next = 0
+        func batch(_ prepared: [UUID:PartNode.PreparedGeometry]) {
+            guard generation == self.loadGeneration else { return }
+            let batchStarted = ProcessInfo.processInfo.systemUptime
+            repeat {
+                let part = parts[next]
+                let partStarted = ProcessInfo.processInfo.systemUptime
+                let node = PartNode(part,prepared:prepared[part.id],eagerFeatureProxies:false)
+                let elapsed = ProcessInfo.processInfo.systemUptime-partStarted
+                if elapsed > self.longestScenePartSeconds { self.longestScenePartSeconds = elapsed; self.longestScenePartName = part.name }
+                node.setSelected(self.doc.selectedIDs.contains(part.id))
+                node.root.isHidden = !self.doc.isVisible(part)
+                self.nodes[part.id] = node
+                self.partsRoot.addChildNode(node.root)
+                next += 1
+            } while next < parts.count && ProcessInfo.processInfo.systemUptime-batchStarted < 0.008
+            self.longestSceneBatchSeconds = max(self.longestSceneBatchSeconds,ProcessInfo.processInfo.systemUptime-batchStarted)
+            if next == parts.count {
+                self.loadingProgress = nil
+                self.updateSelection(force:true)
+                self.rebuildEdgeBatches()
+                self.rebuildHighlights()
+                self.sceneRevision &+= 1
+                self.lastSceneLoadSeconds = ProcessInfo.processInfo.systemUptime - started
+            } else {
+                if Double(next) / Double(parts.count) - (self.loadingProgress ?? 0) >= 0.08 {
+                    self.loadingProgress = Double(next) / Double(parts.count)
+                }
+                DispatchQueue.main.async { batch(prepared) }
+            }
+        }
+        let species = Set(parts.map(\.species))
+        DispatchQueue.global(qos:.userInitiated).async {
+            var prepared: [UUID:PartNode.PreparedGeometry] = [:]
+            for part in parts { if let geometry = PartNode.prepare(part) { prepared[part.id] = geometry } }
+            WoodTexture.prewarm(species)
+            DispatchQueue.main.async { batch(prepared) }
+        }
     }
 
     private func updateVisibility() {
         for p in doc.parts { nodes[p.id]?.root.isHidden = !doc.isVisible(p) }
     }
 
+    private func rebuildEdgeBatches() {
+        edgeBatchRoot.childNodes.forEach { $0.removeFromParentNode() }
+        edgeBatchNodes = []; edgeBatchGroups = []; edgeBatchIndex = [:]
+        for node in nodes.values { node.edges.isHidden = false }
+        guard nodes.count > 200, doc.studio.section == nil, doc.historyInspection == nil else { return }
+        let ids = doc.parts.compactMap { part -> UUID? in
+            guard let node = nodes[part.id], PartNode.plainTemplateKey(node.part) != nil else { return nil }
+            return part.id
+        }
+        for start in stride(from:0,to:ids.count,by:32) {
+            let group = Array(ids[start..<min(start+32,ids.count)])
+            let index = edgeBatchGroups.count
+            edgeBatchGroups.append(group)
+            for id in group { edgeBatchIndex[id] = index }
+            let node = SCNNode(); node.categoryBitMask = 1
+            edgeBatchNodes.append(node); edgeBatchRoot.addChildNode(node)
+            updateEdgeBatch(index)
+        }
+    }
+
+    private func refreshEdgeBatches() {
+        for i in edgeBatchGroups.indices { updateEdgeBatch(i) }
+    }
+
+    private func updateEdgeBatch(_ index: Int) {
+        guard edgeBatchGroups.indices.contains(index) else { return }
+        var vertices: [SCNVector3] = [], indices: [UInt32] = []
+        let pairs: [(UInt32,UInt32)] = [(0,1),(1,3),(3,2),(2,0),(4,5),(5,7),(7,6),(6,4),(0,4),(1,5),(2,6),(3,7)]
+        for id in edgeBatchGroups[index] {
+            guard let part = nodes[id]?.part, let node = nodes[id] else { continue }
+            let batch = (doc.part(id).map(doc.isVisible) ?? false) && !doc.selectedIDs.contains(id)
+            node.edges.isHidden = batch
+            guard batch else { continue }
+            let base = UInt32(vertices.count), center = part.size / 2
+            for corner in 0..<8 {
+                let local = SIMD3<Double>(corner & 1 == 0 ? 0 : part.size.x,
+                                          corner & 2 == 0 ? 0 : part.size.y,
+                                          corner & 4 == 0 ? 0 : part.size.z)
+                vertices.append(vec(part.toWorld(center + (local-center) * 1.0005)))
+            }
+            for (a,b) in pairs { indices += [base+a,base+b] }
+        }
+        if vertices.isEmpty { edgeBatchNodes[index].geometry = nil; return }
+        let geometry = SCNGeometry(sources:[SCNGeometrySource(vertices:vertices)],
+                                   elements:[SCNGeometryElement(indices:indices,primitiveType:.line)])
+        geometry.materials = [Geo.lineMaterial(.black)]
+        edgeBatchNodes[index].geometry = geometry
+    }
+
     private func updateSelection(force: Bool = false) {
         let changed = styledIDs.symmetricDifference(doc.selectedIDs)
         for id in changed { nodes[id]?.setSelected(doc.selectedIDs.contains(id)) }
+        for index in Set(changed.compactMap { edgeBatchIndex[$0] }) { updateEdgeBatch(index) }
         let needsOverlay = force || !changed.isEmpty || lastSelection != doc.selection || lastSelectedFace != doc.selectedFace || lastSelectedFeature != doc.selectedFeature || lastTool != doc.tool
         styledIDs = doc.selectedIDs
         guard needsOverlay else { return }
@@ -285,9 +520,15 @@ final class SceneController: ObservableObject {
     }
 
     private func rebuildGizmo() {
-        gizmoNode.childNodes.forEach { $0.removeFromParentNode() }
-        guard doc.tool == .move, let p = doc.selectedPart, doc.isVisible(p) else { return }
+        guard doc.tool == .move, let p = doc.selectedPart, doc.isVisible(p) else {
+            if !gizmoNode.childNodes.isEmpty { gizmoNode.childNodes.forEach { $0.removeFromParentNode() } }
+            gizmoPartID = nil
+            return
+        }
         let length = max(3, distance * 0.065)
+        guard gizmoPartID != p.id || gizmoCenter != p.center || gizmoLength != length || gizmoNode.childNodes.isEmpty else { return }
+        gizmoPartID = p.id; gizmoCenter = p.center; gizmoLength = length
+        gizmoNode.childNodes.forEach { $0.removeFromParentNode() }
         for (axis, color) in [(0, NSColor.systemRed), (1, NSColor.systemBlue), (2, NSColor.systemGreen)] {
             var end = p.center; end[axis] += length
             let material = Geo.lineMaterial(color)

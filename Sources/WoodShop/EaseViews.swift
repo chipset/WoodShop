@@ -140,7 +140,7 @@ struct PatternRecipeSheet: View {
         VStack(alignment:.leading,spacing:12) {
             Text(pattern.name).font(.title2.bold());Text(detail).foregroundStyle(.secondary)
             ScrollView { PatternEditor(doc:doc,partID:partID,initial:pattern).padding(4) }
-            HStack { Text(doc.status).font(.caption).foregroundStyle(.secondary).lineLimit(2);Spacer();Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            HStack { StatusMessage(doc:doc).font(.caption).foregroundStyle(.secondary).lineLimit(2);Spacer();Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
         }.padding(20).frame(width:760,height:740).background(Color(nsColor:.windowBackgroundColor))
     }
 }

@@ -59,8 +59,8 @@ struct CutListView: View {
             }
             Divider()
             HStack(spacing:12) {
-                Text(doc.status == doc.tool.hint ? (doc.makeArea == .fabrication ? "Follow the CNC steps above; project tools are in the sections at left." : "Shop settings are saved with the project and can be undone.") : doc.status)
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(2).help(doc.status).frame(maxWidth:.infinity,alignment:.leading)
+                StatusMessage(doc:doc,defaultMessage:doc.makeArea == .fabrication ? "Follow the CNC steps above; project tools are in the sections at left." : "Shop settings are saved with the project and can be undone.")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2).frame(maxWidth:.infinity,alignment:.leading)
                 Menu("Other exports") {
                     Section("Cut list") {
                         Button("Copy CSV") { NSPasteboard.general.clearContents();NSPasteboard.general.setString(CutList.csv(rows,metric:doc.metric),forType:.string);doc.status = "Copied cut list CSV." }.disabled(rows.isEmpty)

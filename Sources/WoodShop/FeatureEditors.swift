@@ -34,7 +34,7 @@ struct FeatureEditorSheet: View {
                     }.padding(8)
                 }
             } else { Text("This part was removed.") }
-            HStack { Text(doc.status).font(.caption).foregroundStyle(.secondary).lineLimit(3); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            HStack { StatusMessage(doc:doc).font(.caption).foregroundStyle(.secondary).lineLimit(3); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
         }.padding(20).frame(width:760,height:740).background(Color(nsColor:.windowBackgroundColor))
         .onDisappear { doc.clearParameterPreview() }
     }

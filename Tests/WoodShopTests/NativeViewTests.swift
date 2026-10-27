@@ -68,6 +68,7 @@ final class NativeViewTests: XCTestCase {
         view.mouseDown(with: mouse(.leftMouseDown, start))
         XCTAssertTrue(doc.activeDrag)
         view.mouseDragged(with: mouse(.leftMouseDragged, CGPoint(x: start.x + 30, y: start.y)))
+        XCTAssertEqual(doc.part(part.id)?.origin, part.origin, "Dragging should preview without regenerating the project")
         view.mouseUp(with: mouse(.leftMouseUp, CGPoint(x: start.x + 30, y: start.y)))
         XCTAssertTrue(doc.activeDrag, "Typed distances must remain available after releasing the mouse")
         doc.applyDistance?(3.5)

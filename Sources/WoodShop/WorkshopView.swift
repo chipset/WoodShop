@@ -35,7 +35,7 @@ struct WorkshopView: View {
                 LibraryWorkbench(doc: doc).tabItem { Text("Import & Library") }.tag(4)
             }
             HStack {
-                Text(doc.status).font(.callout).foregroundStyle(.secondary).lineLimit(3)
+                StatusMessage(doc:doc).font(.callout).foregroundStyle(.secondary).lineLimit(3)
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }

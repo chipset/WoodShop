@@ -54,7 +54,7 @@ struct SetupProfilesPanel: View {
                 }
             }
             HStack {
-                Text(doc.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                StatusMessage(doc:doc).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 Spacer()
                 Button("Save for future projects") { _ = doc.saveSetup(draft) }.disabled(error != nil)
                 Button("Use this setup") { if doc.activateSetup(draft) { doc.status = "Using ‘\(draft.name)’.";dismiss() } }.disabled(error != nil).buttonStyle(.borderedProminent)

@@ -20,13 +20,16 @@ final class ModelView: SCNView {
     private var mode = DragMode.none
 
     private var startParts: [Part] = []
+    private var nearbyPartBounds: [Box] = []
     private var startPart: Part?
+    private var pendingEdit: [Part] = []
     private var startHit = SIMD3<Double>.zero
     private var startMouse = CGPoint.zero
     private var pushFace: FaceRef?
     private var rectPlane: (axis: Int, value: Double, positive: Bool)?
     private var rectStart = SIMD3<Double>.zero
     private var inferencePartsRevision: UInt64 = .max
+    private var inferenceSceneRevision: UInt64 = .max
     private var inferenceGuides: [ConstructionGuide] = []
     private var inferenceExcept: Set<UUID> = []
     private var inferenceSelectedIDs: Set<UUID> = []
@@ -51,19 +54,37 @@ final class ModelView: SCNView {
         doc.checkpoint()
         startPart = part
         startParts = doc.parts.filter { doc.selectedIDs.contains($0.id) }
+        nearbyPartBounds = doc.parts.filter { !doc.selectedIDs.contains($0.id) && doc.isVisible($0) }.map { part in
+            let bounds = part.bounds
+            return Box(lo:bounds.lo,hi:bounds.hi)
+        }
+        pendingEdit = []
         startHit = point; startMouse = mouse; mode = drag
         doc.activeDrag = true; doc.exactDistance = ""
     }
 
     private func finishOperation() {
-        if mode == .move || mode == .pushPull { doc.discardCheckpointIfUnchanged() }
-        mode = .none; rectPlane = nil; startPart = nil; startParts = []
+        if mode == .move || mode == .pushPull {
+            let changed = pendingEdit.contains { doc.part($0.id) != $0 }
+            let started = ProcessInfo.processInfo.systemUptime
+            let committed = !changed || doc.applyPartChanges(pendingEdit)
+            if changed { ctrl.recordEditCommit(ProcessInfo.processInfo.systemUptime - started) }
+            ctrl.endEditPreview(committed:committed)
+            doc.discardCheckpointIfUnchanged()
+        }
+        mode = .none; rectPlane = nil; startPart = nil; startParts = []; nearbyPartBounds = []
+        pendingEdit = []
         doc.activeDrag = false; doc.exactDistance = ""
         ctrl.clearPreview(); ctrl.showSnap(nil)
     }
 
     private func cancelOperation() {
-        if mode == .move || mode == .pushPull { doc.cancelCheckpoint() }
+        if mode == .move || mode == .pushPull {
+            pendingEdit = []
+            doc.cancelCheckpoint()
+            ctrl.endEditPreview(committed:false)
+            mode = .none
+        }
         mode = .none
         tapeStart = nil; ctrl.clearMeasure()
         finishOperation()
@@ -92,7 +113,8 @@ final class ModelView: SCNView {
             for var part in startParts { part.origin += delta; try Parametric.validateBindings(part, values: values) }
         } catch { doc.status = error.localizedDescription; return }
         let moved = startParts.map { original -> Part in var p = original; p.origin += delta; return p }
-        _ = doc.applyPartChanges(moved)
+        pendingEdit = moved
+        ctrl.previewMove(moved)
     }
 
     override func updateTrackingAreas() {
@@ -126,8 +148,9 @@ final class ModelView: SCNView {
     }
 
     private func pickedFeature(_ point: CGPoint) -> FeatureRef? {
-        let proxy = hitTest(point,options:[.categoryBitMask:4,.searchMode:SCNHitTestSearchMode.closest.rawValue]).first
         let body = hitTest(point,options:[.categoryBitMask:SceneController.partMask,.searchMode:SCNHitTestSearchMode.closest.rawValue]).first
+        if let name = body?.node.name,let id = UUID(uuidString:name) { ctrl.ensureFeatureProxies(for:id) }
+        let proxy = hitTest(point,options:[.categoryBitMask:4,.searchMode:SCNHitTestSearchMode.closest.rawValue]).first
         guard let proxy,norm(dvec(proxy.worldCoordinates)-dvec(ctrl.cameraNode.worldPosition)) <= (body.map { norm(dvec($0.worldCoordinates)-dvec(ctrl.cameraNode.worldPosition)) } ?? .infinity)+0.001,let name = proxy.node.name else { return nil }
         let fields = name.split(separator:"|")
         guard fields.count == 3,let id = UUID(uuidString:String(fields[0])),let kind = FeatureKind(rawValue:String(fields[1])),let feature = UUID(uuidString:String(fields[2])) else { return nil }
@@ -204,10 +227,9 @@ final class ModelView: SCNView {
     private func snapGrid(_ x: Double) -> Double { (x / doc.snap).rounded() * doc.snap }
 
     /// Snap a coordinate on `axis` to nearby board faces (other than `except`).
-    private func snapToParts(_ x: Double, axis: Int, except: UUID?, threshold: Double = 0.3) -> Double? {
+    private func snapToParts(_ x: Double, axis: Int, threshold: Double = 0.3) -> Double? {
         var best: (d: Double, v: Double)?
-        for p in doc.parts where p.id != except && doc.isVisible(p) {
-            let bb = p.bounds
+        for bb in nearbyPartBounds {
             for v in [bb.lo[axis], bb.hi[axis]] {
                 let d = abs(v - x)
                 if d < threshold && d < (best?.d ?? .infinity) { best = (d, v) }
@@ -218,10 +240,11 @@ final class ModelView: SCNView {
 
     private func infer(_ screen: CGPoint, except: Set<UUID> = []) -> InferencePoint? {
         let selected = doc.isolateSelection ? doc.selectedIDs : []
-        if inferencePartsRevision != doc.partsRevision || inferenceGuides != doc.studio.guides ||
+        if inferencePartsRevision != doc.partsRevision || inferenceSceneRevision != ctrl.sceneRevision || inferenceGuides != doc.studio.guides ||
             inferenceExcept != except || inferenceIsolated != doc.isolateSelection || inferenceSelectedIDs != selected {
             let parts = doc.parts.filter { !except.contains($0.id) && doc.isVisible($0) }
             inferencePartsRevision = doc.partsRevision
+            inferenceSceneRevision = ctrl.sceneRevision
             inferenceGuides = doc.studio.guides
             inferenceExcept = except
             inferenceIsolated = doc.isolateSelection
@@ -245,6 +268,7 @@ final class ModelView: SCNView {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         finishOperation()
+        if ctrl.loadingProgress != nil { doc.status = "Building the model. Editing will be ready in a moment."; return }
         let p = convert(event.locationInWindow, from: nil)
         if event.modifierFlags.contains(.control),let menu = menu(for:event) { NSMenu.popUpContextMenu(menu,with:event,for:self);return }
         if event.modifierFlags.contains(.option) {
@@ -373,6 +397,7 @@ final class ModelView: SCNView {
     override func otherMouseUp(with event: NSEvent) { mode = .none }
 
     override func mouseMoved(with event: NSEvent) {
+        guard ctrl.loadingProgress == nil else { return }
         let p = convert(event.locationInWindow, from: nil)
         if doc.tool == .select {
             if !doc.activeDrag { ctrl.showSnap(nil) }
@@ -412,8 +437,7 @@ final class ModelView: SCNView {
             // Edge inference: line this board's faces up with its neighbours'.
             var best: (d: Double, shift: Double)?
             let pb = part.bounds, off = o[i] - part.origin[i]
-            for other in doc.parts where !doc.selectedIDs.contains(other.id) && doc.isVisible(other) {
-                let ob = other.bounds
+            for ob in nearbyPartBounds {
                 for mine in [pb.lo[i] + off, pb.hi[i] + off] {
                     for theirs in [ob.lo[i], ob.hi[i]] {
                         let d = abs(theirs - mine)
@@ -448,7 +472,7 @@ final class ModelView: SCNView {
             newSize = snapGrid(f.positive ? target : oldSize - target)
         } else {
             var w = snapGrid(part.origin[a] + target)
-            if let s = snapToParts(part.origin[a] + target, axis: a, except: part.id) { w = s }
+            if let s = snapToParts(part.origin[a] + target, axis: a) { w = s }
             newSize = f.positive ? w - part.origin[a] : part.hi[a] - w
         }
         if exactAmount != nil, newSize < 1 / 32 {
@@ -482,7 +506,9 @@ final class ModelView: SCNView {
         }
         np.origin += fixedPoint(part) - fixedPoint(np)
         // Each drag frame derives geometry from the original board.
-        doc.update(part.id, adjustJoinery: false) { $0 = np }
+        if let message = ModelValidation.axes(np) { doc.status = message; return }
+        pendingEdit = [np]
+        ctrl.previewPart(np)
         var faceCenter = np.size / 2
         faceCenter[a] = f.positive ? np.size[a] : 0
         ctrl.showSnap(exactAmount == nil ? np.toWorld(faceCenter) : nil)
@@ -601,11 +627,15 @@ struct ViewportView: NSViewRepresentable {
         v.connectActions()
         v.scene = ctrl.scene
         v.pointOfView = ctrl.cameraNode
-        v.antialiasingMode = .multisampling4X
+        v.antialiasingMode = doc.parts.count > 400 ? .multisampling2X : .multisampling4X
+        v.showsStatistics = ctrl.renderStatisticsVisible
         v.allowsCameraControl = false
         v.autoenablesDefaultLighting = false
         return v
     }
 
-    func updateNSView(_ nsView: ModelView, context: Context) {}
+    func updateNSView(_ nsView: ModelView, context: Context) {
+        let quality: SCNAntialiasingMode = doc.parts.count > 400 ? .multisampling2X : .multisampling4X
+        if nsView.antialiasingMode != quality { nsView.antialiasingMode = quality }
+    }
 }
