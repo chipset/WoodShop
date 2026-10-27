@@ -106,8 +106,11 @@ enum MeshIO {
                 let label = fields.dropFirst().joined(separator: " ")
                 current = MeshGroup(name: label.isEmpty ? name : label, faces: [])
             case "f":
-                let ids = fields.dropFirst().compactMap { Int($0.split(separator: "/", omittingEmptySubsequences: false)[0]) }
-                    .map { $0 < 0 ? vertices.count + $0 : $0 - 1 }
+                var ids: [Int] = []
+                for token in fields.dropFirst() {
+                    let head = token.split(separator: "/", omittingEmptySubsequences: false)[0]
+                    if let n = Int(head) { ids.append(n < 0 ? vertices.count + n : n - 1) }
+                }
                 guard ids.count == fields.count - 1, ids.count >= 3, ids.allSatisfy(vertices.indices.contains) else {
                     throw ModelValidation.Failure(message: "Invalid OBJ face index.")
                 }
@@ -765,12 +768,17 @@ enum MeshIO {
                 if let k = map[key] { idx.append(k) } else { verts.append(p); map[key] = verts.count - 1; idx.append(verts.count - 1) }
             } }
             let id = "geo\(i)"
-            geometries += "<geometry id=\"\(id)\" name=\"\(CNCOut.xmlEscaped(g.part.name))\"><mesh><source id=\"\(id)-pos\"><float_array id=\"\(id)-arr\" count=\"\(verts.count * 3)\">"
-                + verts.map { String(format: "%.5f %.5f %.5f", $0.x, $0.y, $0.z) }.joined(separator: " ")
-                + "</float_array><technique_common><accessor source=\"#\(id)-arr\" count=\"\(verts.count)\" stride=\"3\"><param name=\"X\" type=\"float\"/><param name=\"Y\" type=\"float\"/><param name=\"Z\" type=\"float\"/></accessor></technique_common></source>"
-                + "<vertices id=\"\(id)-vtx\"><input semantic=\"POSITION\" source=\"#\(id)-pos\"/></vertices>"
-                + "<triangles material=\"\(mat)\" count=\"\(tris.count)\"><input semantic=\"VERTEX\" source=\"#\(id)-vtx\" offset=\"0\"/><p>"
-                + idx.map(String.init).joined(separator: " ") + "</p></triangles></mesh></geometry>\n"
+            let name: String = CNCOut.xmlEscaped(g.part.name)
+            let positions: String = verts.map { String(format: "%.5f %.5f %.5f", $0.x, $0.y, $0.z) }.joined(separator: " ")
+            let indices: String = idx.map(String.init).joined(separator: " ")
+            var geo = "<geometry id=\"\(id)\" name=\"\(name)\"><mesh>"
+            geo += "<source id=\"\(id)-pos\"><float_array id=\"\(id)-arr\" count=\"\(verts.count * 3)\">" + positions + "</float_array>"
+            geo += "<technique_common><accessor source=\"#\(id)-arr\" count=\"\(verts.count)\" stride=\"3\">"
+            geo += "<param name=\"X\" type=\"float\"/><param name=\"Y\" type=\"float\"/><param name=\"Z\" type=\"float\"/></accessor></technique_common></source>"
+            geo += "<vertices id=\"\(id)-vtx\"><input semantic=\"POSITION\" source=\"#\(id)-pos\"/></vertices>"
+            geo += "<triangles material=\"\(mat)\" count=\"\(tris.count)\"><input semantic=\"VERTEX\" source=\"#\(id)-vtx\" offset=\"0\"/><p>"
+            geo += indices + "</p></triangles></mesh></geometry>\n"
+            geometries += geo
             nodes += "<node id=\"node\(i)\" name=\"\(CNCOut.xmlEscaped(g.part.name))\"><instance_geometry url=\"#\(id)\"><bind_material><technique_common><instance_material symbol=\"\(mat)\" target=\"#\(mat)\"/></technique_common></bind_material></instance_geometry></node>\n"
         }
         return """

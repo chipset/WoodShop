@@ -97,7 +97,9 @@ enum ShopPlanning {
         let templates = project.studio?.hardwareTemplates ?? []
         var lines = ["Hardware,Quantity,Unit cost,Manufacturer,Part number,Documented dimensions,Source,Notes"]
         for template in templates {
-            let uses = project.parts.flatMap { $0.patterns ?? [] }.filter { $0.hardwareTemplateID == template.id }.count
+            var allPatterns: [DrillingPattern] = []
+            for part in project.parts { allPatterns += part.patterns ?? [] }
+            let uses: Int = allPatterns.filter { $0.hardwareTemplateID == template.id }.count
             guard uses>0 else { continue }
             func q(_ text: String) -> String { "\""+text.replacingOccurrences(of:"\"",with:"\"\"")+"\"" }
             lines.append([q(template.name),String(uses*template.quantityPerUse),Units.decimal(template.unitCost),q(template.manufacturer ?? ""),q(template.partNumber ?? ""),q(template.verifiedDimensions ?? ""),q(template.sourceURL ?? ""),q(template.notes)].joined(separator:","))

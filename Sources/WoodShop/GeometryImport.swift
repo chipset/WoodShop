@@ -58,7 +58,11 @@ enum GeometryImport {
                 guard values.count == 3 else { throw ModelValidation.Failure(message: "Invalid OBJ vertex.") }
                 vertices.append(SIMD3(values[0], values[1], values[2]) * scale)
             } else if command == "f" {
-                let ids = fields.dropFirst().compactMap { Int($0.split(separator: "/", omittingEmptySubsequences: false)[0]) }.map { $0 < 0 ? vertices.count + $0 : $0 - 1 }
+                var ids: [Int] = []
+                for token in fields.dropFirst() {
+                    let head = token.split(separator: "/", omittingEmptySubsequences: false)[0]
+                    if let n = Int(head) { ids.append(n < 0 ? vertices.count + n : n - 1) }
+                }
                 guard ids.count == fields.count - 1, ids.count >= 3, ids.allSatisfy(vertices.indices.contains) else { throw ModelValidation.Failure(message: "Invalid OBJ face index.") }
                 let pts = ids.map { vertices[$0] }
                 let n = simdNormalize(cross(pts[1] - pts[0], pts[2] - pts[0]))

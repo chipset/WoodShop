@@ -95,8 +95,11 @@ enum Geo {
             // A big square on the cut plane, trimmed to each solid piece to form the cap.
             let ref: SIMD3<Double> = abs(pl.n.y) < 0.9 ? SIMD3(0, 1, 0) : SIMD3(1, 0, 0)
             let u = simdNormalize(cross(pl.n, ref)), v = cross(pl.n, u)
-            let big = max(1, boxes.reduce(0.0) { max($0, norm($1.lo - pl.p), norm($1.hi - pl.p)) }) * 4
-            let square = [pl.p - u * big - v * big, pl.p + u * big - v * big, pl.p + u * big + v * big, pl.p - u * big + v * big]
+            var reach: Double = 1
+            for box in boxes { reach = max(reach, norm(box.lo - pl.p), norm(box.hi - pl.p)) }
+            let big: Double = reach * 4
+            let du: SIMD3<Double> = u * big, dv: SIMD3<Double> = v * big
+            let square: [SIMD3<Double>] = [pl.p - du - dv, pl.p + du - dv, pl.p + du + dv, pl.p - du + dv]
             for b in boxes {
                 var pts = square
                 for a in 0..<3 {

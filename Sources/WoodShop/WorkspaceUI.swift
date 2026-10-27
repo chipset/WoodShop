@@ -29,7 +29,9 @@ struct PartTreeNode: Identifiable {
     static func make(_ parts: [Part]) -> [PartTreeNode] {
         func nodes(_ items: [Part],prefix: [String]) -> [PartTreeNode] {
             let own = items.filter { ($0.group ?? "").split(separator:"/").count <= prefix.count }
-            let grouped = Dictionary(grouping:items.filter { ($0.group ?? "").split(separator:"/").count > prefix.count }) { String(($0.group ?? "").split(separator:"/")[prefix.count]) }
+            let deeper: [Part] = items.filter { ($0.group ?? "").split(separator:"/").count > prefix.count }
+            var grouped: [String: [Part]] = [:]
+            for item in deeper { grouped[String((item.group ?? "").split(separator:"/")[prefix.count]), default: []].append(item) }
             let folders = grouped.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.map { key -> PartTreeNode in
                 let path = (prefix+[key]).joined(separator:"/")
                 return PartTreeNode(id:"assembly:"+path,title:key,path:path,children:nodes(grouped[key]!,prefix:prefix+[key]))
