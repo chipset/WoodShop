@@ -89,12 +89,19 @@ struct FaceSketchEditor: View {
         .onDisappear { doc.clearParameterPreview();doc.faceSketchEditorActive = false }
         .onExitCommand { if tool == .pen { tool = .select } else { dismiss() } }
     }
+    /// Built in steps: one long concatenation is too complex for some Swift compilers to type-check.
+    private var faceTitle: String {
+        let partName: String = part.map { ShopIdentity.label($0) + " · " + $0.name } ?? "Removed part"
+        let sign: String = initial.positive ? "+" : "−"
+        let axis: String = FaceRef.axisNames[initial.axis]
+        return partName + " · " + sign + axis + " face"
+    }
     private var header: some View {
         HStack(spacing:14) {
             Image(systemName:"pencil.and.outline").font(.title2).foregroundStyle(Color.accentColor)
             VStack(alignment:.leading,spacing:3) {
                 Text("Sketch on face").font(.title2.bold())
-                Text((part.map { ShopIdentity.label($0)+" · "+$0.name } ?? "Removed part")+" · "+(initial.positive ? "+" : "−")+FaceRef.axisNames[initial.axis]+" face").font(.callout).foregroundStyle(.secondary)
+                Text(faceTitle).font(.callout).foregroundStyle(.secondary)
             }
             Spacer()
             if report != nil { Picker("Preview",selection:$preview3D) { Text("Face sketch").tag(false);Text("3D result").tag(true) }.pickerStyle(.segmented).frame(width:200) }
